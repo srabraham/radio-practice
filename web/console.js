@@ -53,8 +53,9 @@ async function start(who) {
   tx.bind($('ptt'), {
     latched: () => $('latch').checked,
     channel: () => {
-      const id = Number($('tx-ch').value);
-      return { id, mode: channels[id].mode };
+      const v = $('tx-ch').value;
+      if (v === 'vog') return { mode: 'digital-repeater', vog: true };
+      return { id: Number(v), mode: channels[v].mode };
     },
   });
   link.connect();
@@ -207,6 +208,9 @@ function buildChannels() {
       el('span', { className: 'ch-activity', id: 'ch-act-' + c.id }, 'idle'));
     box.append(row);
   }
+  if (channels.some((c) => c.mode === 'digital-repeater')) {
+    sel.add(new Option('ALL REPEATERS (Voice of God)', 'vog'));
+  }
   if (prev) sel.value = prev;
 }
 
@@ -225,7 +229,8 @@ function renderChannels() {
       const cl = byId.get(id);
       if (!cl) continue;
       const secs = Math.floor((Date.now() - cl.tx.since) / 1000);
-      act.append(el('span', { className: 'badge tx' }, `${cl.callsign} ${secs}s`), cutButton(cl));
+      const who = cl.tx.vog ? `${cl.callsign} (Voice of God)` : cl.callsign;
+      act.append(el('span', { className: 'badge tx' }, `${who} ${secs}s`), cutButton(cl));
     }
   }
 }
@@ -263,9 +268,10 @@ function renderTx() {
   const labels = {
     idle: 'Ready',
     waiting: 'Requesting repeater…',
-    tx: 'Transmitting',
-    denied: tx.reason === 'no_repeater' ? 'No repeater' : 'Channel busy',
+    tx: tx.vog ? 'Voice of God: transmitting on every repeater' : 'Transmitting',
+    denied: tx.reason === 'no_repeater' ? 'No repeater' : tx.vog ? 'Another Voice of God is on the air' : 'Channel busy',
     alarm: 'Time-out: release the button',
+    preempted: 'Cut off by Voice of God',
   };
   $('tx-status').textContent = labels[tx.state];
   $('ptt').classList.toggle('active', tx.keyed);

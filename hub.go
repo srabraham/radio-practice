@@ -39,7 +39,8 @@ type Client struct {
 }
 
 type transmission struct {
-	ch    int
+	chs   []int // more than one only for Voice of God
+	vog   bool
 	start time.Time
 	timer *time.Timer
 }
@@ -158,6 +159,7 @@ type inMsg struct {
 	Loss float64 `json:"loss"`
 	Text string  `json:"text"`
 	To   uint16  `json:"to"`
+	Vog  bool    `json:"vog"`
 }
 
 func (h *Hub) HandleJSON(c *Client, data []byte) {
@@ -170,7 +172,11 @@ func (h *Hub) HandleJSON(c *Client, data []byte) {
 
 	switch m.T {
 	case "key":
-		h.keyLocked(c, m.Ch)
+		if !m.Vog {
+			h.keyLocked(c, m.Ch)
+		} else if c.Role == RoleInstructor {
+			h.voiceOfGodLocked(c)
+		}
 	case "unkey":
 		h.endTxLocked(c, "")
 	case "tune":
@@ -263,8 +269,42 @@ func (h *Hub) keyLocked(c *Client, chID int) {
 	case ModeSimplex:
 		ch.txers[c] = true
 	}
+	h.startTxLocked(c, []int{chID}, false)
+}
 
-	tx := &transmission{ch: chID, start: time.Now()}
+// voiceOfGodLocked keys c on every repeater channel at once, cutting off
+// whoever is talking on them. Simplex channels are untouched.
+func (h *Hub) voiceOfGodLocked(c *Client) {
+	if c.tx != nil {
+		return
+	}
+	var chs []int
+	for _, ch := range h.channels {
+		if ch.Mode != ModeRepeater {
+			continue
+		}
+		// Two instructors can't both be God; the second one waits.
+		if ch.holder != nil && ch.holder.tx.vog {
+			h.sendJSON(c, map[string]any{"t": "tx_deny", "vog": true, "reason": "busy"})
+			return
+		}
+		chs = append(chs, ch.id)
+	}
+	if len(chs) == 0 {
+		return
+	}
+	for _, id := range chs {
+		ch := h.channels[id]
+		if ch.holder != nil {
+			h.endTxLocked(ch.holder, "vog")
+		}
+		ch.holder = c
+	}
+	h.startTxLocked(c, chs, true)
+}
+
+func (h *Hub) startTxLocked(c *Client, chs []int, vog bool) {
+	tx := &transmission{chs: chs, vog: vog, start: time.Now()}
 	tx.timer = time.AfterFunc(h.tot, func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -273,10 +313,19 @@ func (h *Hub) keyLocked(c *Client, chID int) {
 		}
 	})
 	c.tx = tx
-	h.sendJSON(c, map[string]any{"t": "tx_ok", "ch": chID})
+	ok := map[string]any{"t": "tx_ok", "ch": chs[0]}
+	if vog {
+		ok["vog"] = true
+	}
+	h.sendJSON(c, ok)
 	for _, r := range h.clients {
-		if r != c && h.subscribedLocked(r, chID) {
-			h.sendJSON(r, h.rxStart(c, r, ch))
+		if r == c {
+			continue
+		}
+		for _, id := range chs {
+			if h.subscribedLocked(r, id) {
+				h.sendJSON(r, h.rxStart(c, r, h.channels[id]))
+			}
 		}
 	}
 	h.dirty = true
@@ -291,17 +340,24 @@ func (h *Hub) endTxLocked(c *Client, reason string) {
 	}
 	tx.timer.Stop()
 	c.tx = nil
-	ch := h.channels[tx.ch]
-	if ch.holder == c {
-		ch.holder = nil
+	for _, id := range tx.chs {
+		ch := h.channels[id]
+		if ch.holder == c {
+			ch.holder = nil
+		}
+		delete(ch.txers, c)
 	}
-	delete(ch.txers, c)
 	if reason != "" {
 		h.sendJSON(c, map[string]any{"t": "tx_end", "reason": reason})
 	}
 	for _, r := range h.clients {
-		if r != c && h.subscribedLocked(r, tx.ch) {
-			h.sendJSON(r, map[string]any{"t": "rx_end", "ch": tx.ch, "sid": c.ID})
+		if r == c {
+			continue
+		}
+		for _, id := range tx.chs {
+			if h.subscribedLocked(r, id) {
+				h.sendJSON(r, map[string]any{"t": "rx_end", "ch": id, "sid": c.ID})
+			}
 		}
 	}
 	h.dirty = true
@@ -321,29 +377,39 @@ func (h *Hub) Audio(c *Client, frame []byte) {
 	if tx == nil {
 		return
 	}
-	ch := h.channels[tx.ch]
-	uplink := h.uplinkLocked(c, ch)
+	uplinks := make([]float64, len(tx.chs))
+	for i, id := range tx.chs {
+		uplinks[i] = h.uplinkLocked(c, h.channels[id])
+	}
 	for _, r := range h.clients {
-		if r == c || !h.subscribedLocked(r, ch.id) {
-			continue
-		}
 		// Radios are half-duplex: while transmitting you hear nothing.
-		if r.tx != nil {
+		if r == c || r.tx != nil {
 			continue
 		}
-		q := h.qualityLocked(c, r, ch, uplink)
-		if q < squelchThreshold {
-			continue
-		}
-		out := make([]byte, 4+len(frame))
-		out[0] = byte(ch.id)
-		binary.BigEndian.PutUint16(out[1:3], c.ID)
-		out[3] = byte(q * 255)
-		copy(out[4:], frame)
-		select {
-		case r.send <- outMsg{binary: true, data: out}:
-		default:
-			// Slow client; dropping audio is better than stalling everyone.
+		for i, id := range tx.chs {
+			if !h.subscribedLocked(r, id) {
+				continue
+			}
+			ch := h.channels[id]
+			q := h.qualityLocked(c, r, ch, uplinks[i])
+			if q < squelchThreshold {
+				continue
+			}
+			out := make([]byte, 4+len(frame))
+			out[0] = byte(ch.id)
+			binary.BigEndian.PutUint16(out[1:3], c.ID)
+			out[3] = byte(q * 255)
+			copy(out[4:], frame)
+			select {
+			case r.send <- outMsg{binary: true, data: out}:
+			default:
+				// Slow client; dropping audio is better than stalling everyone.
+			}
+			// A scanning radio picks one channel to listen to, but the console
+			// mixes everything it gets, so give it a single copy of Voice of God.
+			if r.Role == RoleInstructor {
+				break
+			}
 		}
 	}
 }
@@ -385,8 +451,13 @@ func (h *Hub) rxStart(tx, rx *Client, ch *channel) map[string]any {
 // channels it just started listening to.
 func (h *Hub) sendOngoingLocked(c *Client) {
 	for _, t := range h.clients {
-		if t != c && t.tx != nil && h.subscribedLocked(c, t.tx.ch) {
-			h.sendJSON(c, h.rxStart(t, c, h.channels[t.tx.ch]))
+		if t == c || t.tx == nil {
+			continue
+		}
+		for _, id := range t.tx.chs {
+			if h.subscribedLocked(c, id) {
+				h.sendJSON(c, h.rxStart(t, c, h.channels[id]))
+			}
 		}
 	}
 }
@@ -437,7 +508,7 @@ func (h *Hub) stateLocked() map[string]any {
 			"scanning": c.scanning, "pos": c.pos, "loc": c.loc,
 		}
 		if c.tx != nil {
-			m["tx"] = map[string]any{"ch": c.tx.ch, "since": c.tx.start.UnixMilli()}
+			m["tx"] = map[string]any{"ch": c.tx.chs[0], "vog": c.tx.vog, "since": c.tx.start.UnixMilli()}
 		}
 		clients = append(clients, m)
 	}

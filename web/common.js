@@ -13,6 +13,14 @@ export async function loginForm({ onInstructor, onParticipant, want }) {
     onInstructor(who);
     return;
   }
+  // Sessions don't survive a server restart, so remember the last login and
+  // prefill it. The passwords are shared practice passwords, not real secrets.
+  const saveKey = 'rp.login.' + (want || 'participant');
+  const saved = loadLogin(saveKey);
+  if (saved) {
+    $('callsign').value = saved.callsign;
+    $('password').value = saved.password;
+  }
   if (who) {
     $('callsign').value = who.callsign;
     $('callsign').readOnly = true;
@@ -33,13 +41,32 @@ export async function loginForm({ onInstructor, onParticipant, want }) {
         return;
       }
       who = await r.json();
+      saveLogin(saveKey, { callsign: $('callsign').value, password: $('password').value });
     }
     if (who.role === 'instructor' && onInstructor) onInstructor(who);
     else onParticipant(who);
   });
 }
 
+function loadLogin(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+function saveLogin(key, login) {
+  try {
+    localStorage.setItem(key, JSON.stringify(login));
+  } catch {}
+}
+
 export async function logout() {
+  try {
+    localStorage.removeItem('rp.login.participant');
+    localStorage.removeItem('rp.login.instructor');
+  } catch {}
   await fetch('/api/logout', { method: 'POST' });
   location.href = '/';
 }

@@ -176,6 +176,7 @@ function render() {
     case 'tx': status = 'TX ' + fmtSecs((performance.now() - tx.startedAt) / 1000); break;
     case 'denied': status = tx.reason === 'no_repeater' ? 'NO REPEATER' : 'CHANNEL BUSY'; break;
     case 'alarm': status = tx.reason === 'forced' ? 'CUT BY CONTROL' : 'TIME-OUT'; break;
+    case 'preempted': if (!heard.length) status = 'PREEMPTED'; break;
   }
   $('status').textContent = status;
   $('led-tx').classList.toggle('on', tx.state === 'tx' || tx.state === 'waiting');

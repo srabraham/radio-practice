@@ -9,6 +9,7 @@ import (
 
 const (
 	chDispatch = 0 // digital repeater
+	chOps      = 1 // digital repeater
 	chTac1     = 3 // FM simplex
 	chTac2     = 4
 )
@@ -321,5 +322,95 @@ func TestInstructorMoveZoneAndPrompt(t *testing.T) {
 	ctrlB, _ := drain(b)
 	if !hasMsg(ctrlA, "prompt", "text", "Radio check") || hasMsg(ctrlB, "prompt", "", nil) {
 		t.Fatalf("prompt should reach only ALPHA: %v / %v", ctrlA, ctrlB)
+	}
+}
+
+func TestVoiceOfGodCutsRepeatersOnly(t *testing.T) {
+	h := newTestHub(time.Minute)
+	a := join(h, "ALPHA", RoleParticipant)
+	b := join(h, "BRAVO", RoleParticipant)
+	c := join(h, "CHARLIE", RoleParticipant)
+	d := join(h, "DELTA", RoleParticipant)
+	ctl := join(h, "CONTROL", RoleInstructor)
+	mon := join(h, "MONITOR", RoleInstructor)
+	send(h, b, `{"t":"tune","ch":%d}`, chOps)
+	send(h, c, `{"t":"tune","ch":%d}`, chTac1)
+	send(h, d, `{"t":"tune","ch":%d}`, chTac1)
+
+	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
+	send(h, c, `{"t":"key","ch":%d}`, chTac1)
+	for _, r := range []*testRadio{a, b, c, d, ctl, mon} {
+		drain(r)
+	}
+
+	send(h, a, `{"t":"key","vog":true}`)
+	if ctrl, _ := drain(a); hasMsg(ctrl, "tx_end", "", nil) {
+		t.Fatalf("a participant must not be able to use Voice of God, got %v", ctrl)
+	}
+
+	send(h, ctl, `{"t":"key","vog":true}`)
+	ctrl, _ := drain(ctl)
+	if !hasMsg(ctrl, "tx_ok", "vog", true) {
+		t.Fatalf("CONTROL should get the floor on every repeater, got %v", ctrl)
+	}
+	ctrl, _ = drain(a)
+	if !hasMsg(ctrl, "tx_end", "reason", "vog") {
+		t.Fatalf("ALPHA should be cut off by Voice of God, got %v", ctrl)
+	}
+	ctrl, _ = drain(b)
+	if !hasMsg(ctrl, "rx_start", "from", "CONTROL") {
+		t.Fatalf("BRAVO on OPS should hear CONTROL, got %v", ctrl)
+	}
+	if c.tx == nil {
+		t.Fatalf("CHARLIE on simplex must not be cut")
+	}
+
+	h.Audio(ctl.Client, frame)
+	if _, audio := drain(a); len(audio) != 1 || audio[0][0] != chDispatch {
+		t.Fatalf("ALPHA should now hear CONTROL on DISPATCH, got %v", audio)
+	}
+	if _, audio := drain(b); len(audio) != 1 || audio[0][0] != chOps {
+		t.Fatalf("BRAVO should hear CONTROL on OPS, got %v", audio)
+	}
+	if _, audio := drain(d); len(audio) != 0 {
+		t.Fatalf("DELTA on simplex should not hear Voice of God, got %v", audio)
+	}
+	if _, audio := drain(mon); len(audio) != 1 {
+		t.Fatalf("another console should get one copy of Voice of God, got %d", len(audio))
+	}
+
+	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
+	ctrl, _ = drain(a)
+	if !hasMsg(ctrl, "tx_deny", "reason", "busy") {
+		t.Fatalf("repeaters should be busy during Voice of God, got %v", ctrl)
+	}
+
+	send(h, ctl, `{"t":"unkey"}`)
+	ctrl, _ = drain(b)
+	if !hasMsg(ctrl, "rx_end", "sid", ctl.ID) {
+		t.Fatalf("BRAVO should get rx_end, got %v", ctrl)
+	}
+	send(h, b, `{"t":"key","ch":%d}`, chOps)
+	ctrl, _ = drain(b)
+	if !hasMsg(ctrl, "tx_ok", "", nil) {
+		t.Fatalf("repeaters should be free after Voice of God ends, got %v", ctrl)
+	}
+}
+
+func TestVoiceOfGodDoesNotCutAnotherVoiceOfGod(t *testing.T) {
+	h := newTestHub(time.Minute)
+	ctl1 := join(h, "CONTROL1", RoleInstructor)
+	ctl2 := join(h, "CONTROL2", RoleInstructor)
+
+	send(h, ctl1, `{"t":"key","vog":true}`)
+	drain(ctl1)
+	send(h, ctl2, `{"t":"key","vog":true}`)
+	ctrl, _ := drain(ctl2)
+	if !hasMsg(ctrl, "tx_deny", "reason", "busy") {
+		t.Fatalf("a second Voice of God should be denied, got %v", ctrl)
+	}
+	ctrl, _ = drain(ctl1)
+	if hasMsg(ctrl, "tx_end", "", nil) || ctl1.tx == nil {
+		t.Fatalf("the first Voice of God should keep going, got %v", ctrl)
 	}
 }

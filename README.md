@@ -89,6 +89,9 @@ hang time. PTT during the hang time talks back on that channel.
 - Drags radios around the map; signal changes are live while dragging.
 - Adds or removes dead zones.
 - Force-unkeys a stuck mic.
+- Voice of God: transmits on every repeater channel at once. Anyone talking on
+  a repeater is cut off and hears Control instead. Simplex channels are not
+  affected.
 - Sends scenario prompts to everyone or one radio.
 - Transmits as Control, always at full strength.
 
@@ -101,7 +104,7 @@ bandwidth by about 3x if that ever matters.
 ### Wire protocol
 
 JSON text frames carry control messages. Client to server:
-- `key`, `unkey`, `tune`, `scan`, `pos`
+- `key` (instructors may send `vog: true` for Voice of God), `unkey`, `tune`, `scan`, `pos`
 - instructor only: `monitor`, `move`, `zone_add`, `zone_del`, `force_unkey`, `prompt`
 
 Server to client:
