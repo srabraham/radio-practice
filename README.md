@@ -133,4 +133,4 @@ Binary frames carry audio:
 - Channels, landmarks and the TOT are hard-coded in `world.go`. Move them to a config file.
 - iOS Safari routes audio to the earpiece while the mic is open. Releasing the mic between transmissions may help.
 - Future work: recording and playback, speech-to-text scoring, and bot traffic (TTS) for solo practice.
-- Per-IP rate limiting on login. There is currently only a fixed delay after a wrong password.
+- Per-IP rate limiting on login. There is currently a fixed delay after a wrong password and a global cap of 1,000 failures per hour. Past the cap, all new logins are refused until it refills, but existing sessions keep working.

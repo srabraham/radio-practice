@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,6 +21,7 @@ type Auth struct {
 	key           []byte
 	participantPW string
 	instructorPW  string
+	failures      *failureBudget
 }
 
 type session struct {
@@ -32,7 +35,63 @@ func NewAuth(participantPW, instructorPW string) *Auth {
 	// fine for a practice tool.
 	key := make([]byte, 32)
 	rand.Read(key)
-	return &Auth{key: key, participantPW: participantPW, instructorPW: instructorPW}
+	return &Auth{
+		key:           key,
+		participantPW: participantPW,
+		instructorPW:  instructorPW,
+		failures:      newFailureBudget(1000, time.Hour, time.Now),
+	}
+}
+
+// failureBudget caps wrong-password attempts across all clients: a token
+// bucket holding up to max failures, refilling at max per window. Once it's
+// empty, logins are refused without checking the password, since checking it
+// at all would still give an attacker a guess.
+type failureBudget struct {
+	mu     sync.Mutex
+	max    float64
+	perSec float64
+	tokens float64
+	last   time.Time
+	now    func() time.Time
+}
+
+func newFailureBudget(max int, window time.Duration, now func() time.Time) *failureBudget {
+	return &failureBudget{
+		max:    float64(max),
+		perSec: float64(max) / window.Seconds(),
+		tokens: float64(max),
+		last:   now(),
+		now:    now,
+	}
+}
+
+func (b *failureBudget) refill() {
+	t := b.now()
+	b.tokens = min(b.max, b.tokens+t.Sub(b.last).Seconds()*b.perSec)
+	b.last = t
+}
+
+// take reserves one failure up front, so a burst of parallel requests can't
+// all slip past the check before any of them is counted. It returns 0 on
+// success, or how long until an attempt may proceed.
+func (b *failureBudget) take() time.Duration {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.refill()
+	if b.tokens < 1 {
+		return time.Duration((1 - b.tokens) / b.perSec * float64(time.Second))
+	}
+	b.tokens--
+	return 0
+}
+
+// refund returns a token reserved by take, for an attempt that succeeded.
+func (b *failureBudget) refund() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.refill()
+	b.tokens = min(b.max, b.tokens+1)
 }
 
 func (a *Auth) sign(payload []byte) []byte {
@@ -90,6 +149,12 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if wait := a.failures.take(); wait > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		http.Error(w, "too many failed logins; try again later", http.StatusTooManyRequests)
+		return
+	}
+
 	var role Role
 	switch {
 	case a.instructorPW != "" && subtle.ConstantTimeCompare([]byte(req.Password), []byte(a.instructorPW)) == 1:
@@ -101,6 +166,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wrong password", http.StatusUnauthorized)
 		return
 	}
+	a.failures.refund()
 
 	ttl := 24 * time.Hour
 	s := session{Callsign: callsign, Role: role, Exp: time.Now().Add(ttl).Unix()}

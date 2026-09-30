@@ -59,13 +59,25 @@ func main() {
 			HostPolicy: autocert.HostWhitelist(*domain),
 			Cache:      autocert.DirCache(*certDir),
 		}
-		go func() { log.Fatal(http.ListenAndServe(":80", m.HTTPHandler(nil))) }()
-		srv := &http.Server{Addr: ":443", Handler: mux, TLSConfig: m.TLSConfig()}
+		go func() { log.Fatal(newServer(":80", m.HTTPHandler(nil)).ListenAndServe()) }()
+		srv := newServer(":443", mux)
+		srv.TLSConfig = m.TLSConfig()
 		log.Printf("listening on https://%s", *domain)
 		log.Fatal(srv.ListenAndServeTLS("", ""))
 	}
 	log.Printf("listening on http://localhost%s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, mux))
+	log.Fatal(newServer(*addr, mux).ListenAndServe())
+}
+
+// newServer drops connections that dribble in headers or sit idle. There's
+// deliberately no ReadTimeout or WriteTimeout: those would cut off WebSockets.
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
 }
 
 func envOrRandom(name string) string {
