@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radio Control</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="console-page">
+  <main id="login" class="card">
+    <h1>Radio Control</h1>
+    <form id="login-form">
+      <label>Callsign <input id="callsign" value="CONTROL" maxlength="20" required></label>
+      <label id="pw-row">Instructor password <input id="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Open console</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </main>
+
+  <div id="console" hidden>
+    <header class="console-head">
+      <strong>Radio Control</strong>
+      <span id="me"></span>
+      <span id="net">connecting…</span>
+      <span id="hearing" class="hearing"></span>
+      <span id="mic-warn" class="error"></span>
+      <a href="#" id="logout">Log out</a>
+    </header>
+
+    <div class="console-grid">
+      <section class="panel map-panel">
+        <div class="toolbar">
+          <div class="seg">
+            <button id="tool-move" class="on">Move radios</button>
+            <button id="tool-zone">Dead zones</button>
+          </div>
+          <label>Zone radius <input id="zone-r" type="range" min="100" max="800" step="50" value="300"> <span id="zone-r-v">300 m</span></label>
+          <label>Loss <input id="zone-loss" type="range" min="0.3" max="1" step="0.05" value="0.85"> <span id="zone-loss-v">85%</span></label>
+        </div>
+        <canvas id="map"></canvas>
+        <p class="hint">Drag radios to move them. In dead-zone mode, click to add a zone and click a zone to remove it. Dashed circles show the reach of FM transmitters.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Transmit as Control</h2>
+        <div class="row">
+          <select id="tx-ch"></select>
+          <button id="ptt" class="ptt small">PUSH TO TALK</button>
+        </div>
+        <label class="check"><input id="latch" type="checkbox"> Tap to talk / tap to stop</label>
+        <div id="tx-status" class="hint">Ready</div>
+        <label>Volume <input id="volume" type="range" min="0" max="1.5" step="0.05" value="0.8"></label>
+
+        <h2>Channels</h2>
+        <div id="channels"></div>
+
+        <h2>Send a prompt</h2>
+        <div class="row">
+          <label>To <select id="prompt-to"></select></label>
+          <label>Preset <select id="prompt-preset"></select></label>
+        </div>
+        <textarea id="prompt-text" rows="3" placeholder="What the participant sees on their radio screen"></textarea>
+        <button id="prompt-send">Send prompt</button>
+
+        <h2>Radios</h2>
+        <table class="roster">
+          <thead><tr><th>Callsign</th><th>Channel</th><th>Location</th><th></th></tr></thead>
+          <tbody id="roster"></tbody>
+        </table>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="console.js"></script>
+</body>
+</html>

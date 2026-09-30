@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Radio Practice</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="radio-page">
+  <main id="login" class="card">
+    <h1>Radio Practice</h1>
+    <form id="login-form">
+      <label>Callsign <input id="callsign" autocomplete="nickname" maxlength="20" required></label>
+      <label id="pw-row">Password <input id="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Power on</button>
+      <p id="login-error" class="error"></p>
+    </form>
+    <p class="hint">Your browser will ask for microphone access.</p>
+  </main>
+
+  <main id="radio" hidden>
+    <div class="radio">
+      <div class="lcd">
+        <div class="lcd-top">
+          <span id="chnum">CH 1</span>
+          <span id="mode" class="tag">DIG</span>
+          <span id="scan-ind" class="tag" hidden>SCAN</span>
+          <span id="bars" class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
+        <div id="chname" class="lcd-name">—</div>
+        <div id="status" class="lcd-status">READY</div>
+      </div>
+
+      <div class="leds">
+        <span><i id="led-tx" class="led tx"></i>TX</span>
+        <span><i id="led-rx" class="led rx"></i>RX</span>
+      </div>
+
+      <div class="knobs">
+        <button id="ch-down" aria-label="Channel down">◀</button>
+        <span class="knob-label">CHANNEL</span>
+        <button id="ch-up" aria-label="Channel up">▶</button>
+        <button id="scan" class="toggle">SCAN</button>
+      </div>
+
+      <button id="ptt" class="ptt">PUSH TO TALK</button>
+      <p class="hint center">Hold the button, or hold the space bar.</p>
+
+      <div class="settings">
+        <label>Volume <input id="volume" type="range" min="0" max="1.5" step="0.05" value="0.8"></label>
+        <label>Location <select id="loc"></select></label>
+        <label class="check"><input id="latch" type="checkbox"> Tap to talk / tap to stop</label>
+      </div>
+    </div>
+
+    <section id="prompts" aria-live="polite"></section>
+
+    <footer class="footer">
+      <span id="me"></span> · <span id="net">connecting…</span> ·
+      <span id="mic-warn" class="error"></span> <a href="#" id="logout">Log out</a>
+    </footer>
+  </main>
+
+  <script type="module" src="radio.js"></script>
+</body>
+</html>
