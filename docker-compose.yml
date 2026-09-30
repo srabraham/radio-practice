@@ -1,0 +1,31 @@
+# Run publicly with Let's Encrypt TLS. The server speaks ACME itself and
+# auto-renews.
+#
+#   1. Point your domain's DNS (A/AAAA) at this host.
+#   2. Create .env with TLS_DOMAIN and the passwords (see README).
+#   3. docker compose up -d --build
+#
+# Certificates are cached in ./certs on the host so they survive re-deploys,
+# which matters because Let's Encrypt rate-limits issuance.
+
+services:
+  radio:
+    build: .
+    image: radio-practice
+    command:
+      - "--tls-domain=${TLS_DOMAIN:?set TLS_DOMAIN in .env, e.g. radio.example.org}"
+      - "--tls-email=${TLS_EMAIL:-}"
+      - "--tls-cache=/certs"
+      # Set TLS_STAGING=true while testing so you don't burn the real quota.
+      - "--tls-staging=${TLS_STAGING:-false}"
+    environment:
+      # Set these in .env, not here, so secrets stay out of version control.
+      # If unset, random passwords are generated and printed to the log.
+      - "RADIO_PASSWORD=${RADIO_PASSWORD:-}"
+      - "RADIO_INSTRUCTOR_PASSWORD=${RADIO_INSTRUCTOR_PASSWORD:-}"
+    ports:
+      - "${HOST_TLS_PORT:-443}:443"
+      - "${HOST_HTTP_PORT:-80}:80" # ACME challenge + redirect; needed for issuance and renewal
+    volumes:
+      - ./certs:/certs
+    restart: unless-stopped

@@ -10,19 +10,29 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
+	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
 
 //go:embed web
 var webFS embed.FS
 
+// Staging issues untrusted certificates but has far higher rate limits, for
+// testing provisioning without burning the production quota.
+const letsEncryptStagingURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
+
 func main() {
-	addr := flag.String("addr", ":8080", "listen address (ignored with -domain)")
-	domain := flag.String("domain", "", "public domain name; enables automatic Let's Encrypt TLS on :443")
-	certDir := flag.String("cert-dir", "certs", "where -domain stores certificates")
+	addr := flag.String("addr", ":8080", "listen address for plain HTTP (ignored with -tls-domain)")
+	tlsDomain := flag.String("tls-domain", "", "comma-separated public domain(s); enables automatic Let's Encrypt TLS")
+	tlsEmail := flag.String("tls-email", "", "contact email to register with Let's Encrypt, for expiry warnings")
+	tlsCache := flag.String("tls-cache", "certs", "where -tls-domain caches certificates and the ACME account key")
+	tlsStaging := flag.Bool("tls-staging", false, "use the Let's Encrypt staging CA (untrusted certs, high rate limits)")
+	httpsAddr := flag.String("https-addr", ":443", "HTTPS listen address with -tls-domain")
+	httpAddr := flag.String("http-addr", ":80", "listen address for ACME HTTP-01 challenges and HTTP→HTTPS redirects with -tls-domain")
 	dev := flag.Bool("dev", false, "serve web/ from disk so edits show up without rebuilding")
 	tot := flag.Duration("tot", 60*time.Second, "transmit time-out timer")
 	flag.Parse()
@@ -53,20 +63,45 @@ func main() {
 	mux.HandleFunc("/api/logout", auth.HandleLogout)
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) { serveWS(hub, auth, w, r) })
 
-	if *domain != "" {
-		m := &autocert.Manager{
-			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist(*domain),
-			Cache:      autocert.DirCache(*certDir),
-		}
-		go func() { log.Fatal(newServer(":80", m.HTTPHandler(nil)).ListenAndServe()) }()
-		srv := newServer(":443", mux)
-		srv.TLSConfig = m.TLSConfig()
-		log.Printf("listening on https://%s", *domain)
-		log.Fatal(srv.ListenAndServeTLS("", ""))
+	if *tlsDomain != "" {
+		serveTLS(mux, splitDomains(*tlsDomain), *tlsEmail, *tlsCache, *httpAddr, *httpsAddr, *tlsStaging)
+		return
 	}
 	log.Printf("listening on http://localhost%s", *addr)
 	log.Fatal(newServer(*addr, mux).ListenAndServe())
+}
+
+// serveTLS gets and renews certificates from Let's Encrypt. The HTTP listener
+// answers ACME HTTP-01 challenges and redirects everything else to HTTPS.
+func serveTLS(h http.Handler, domains []string, email, cacheDir, httpAddr, httpsAddr string, staging bool) {
+	if len(domains) == 0 {
+		log.Fatal("-tls-domain must name at least one domain")
+	}
+	m := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(domains...),
+		Cache:      autocert.DirCache(cacheDir),
+		Email:      email,
+	}
+	if staging {
+		m.Client = &acme.Client{DirectoryURL: letsEncryptStagingURL}
+		log.Print("using Let's Encrypt STAGING; certificates will be untrusted")
+	}
+	go func() { log.Fatal(newServer(httpAddr, m.HTTPHandler(nil)).ListenAndServe()) }()
+	srv := newServer(httpsAddr, h)
+	srv.TLSConfig = m.TLSConfig()
+	log.Printf("listening on https://%s (%s), certs in %q", strings.Join(domains, ", "), httpsAddr, cacheDir)
+	log.Fatal(srv.ListenAndServeTLS("", ""))
+}
+
+func splitDomains(s string) []string {
+	var out []string
+	for _, d := range strings.Split(s, ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // newServer drops connections that dribble in headers or sit idle. There's

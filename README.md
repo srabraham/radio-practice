@@ -23,19 +23,35 @@ go run ./cmd/radiobot -password practice -callsign BOT2 -ch 5 -loc 730-g -pitch 
 ```
 
 Phones need HTTPS before the browser allows the mic (localhost is the only
-exception). To test on a phone, either deploy with `-domain` or use a tunnel
+exception). To test on a phone, either deploy with `-tls-domain` or use a tunnel
 such as `cloudflared tunnel --url http://localhost:8080` or `tailscale serve`.
 
 ## Deploy (AWS Lightsail or EC2)
 
 1. Create a small instance: Lightsail $5/mo, or EC2 t4g.small. Open ports 80 and 443.
 2. Point a DNS name at it.
-3. `GOOS=linux GOARCH=arm64 go build -o radio .` and copy the binary over.
-4. Run `RADIO_PASSWORD=… RADIO_INSTRUCTOR_PASSWORD=… ./radio -domain radio.example.org` under systemd.
+3. Create a `.env` file next to `docker-compose.yml`. Git ignores it.
 
-`-domain` gets and renews a Let's Encrypt certificate automatically, so you
-don't need a reverse proxy. The server keeps everything in memory. A restart
-ends every session, and each person reconnects by tapping "Power on".
+   ```sh
+   TLS_DOMAIN=radio.example.org       # required; comma-separate several domains
+   TLS_EMAIL=you@example.org          # optional; Let's Encrypt expiry warnings
+   TLS_STAGING=false                  # true while testing, to avoid rate limits
+   RADIO_PASSWORD=…
+   RADIO_INSTRUCTOR_PASSWORD=…
+   ```
+
+4. `docker compose up -d --build`
+
+`-tls-domain` gets and renews a Let's Encrypt certificate automatically, so you
+don't need a reverse proxy. Port 80 must stay reachable for issuance and
+renewal. Certificates are cached in `./certs` so they survive re-deploys. The
+server keeps everything in memory. A restart ends every session, and each
+person reconnects by tapping "Power on".
+
+To run without Docker, build with `GOOS=linux GOARCH=arm64 go build -o radio .`,
+copy the binary over, and run
+`RADIO_PASSWORD=… RADIO_INSTRUCTOR_PASSWORD=… ./radio -tls-domain radio.example.org`
+under systemd.
 
 ## Architecture
 
@@ -123,6 +139,7 @@ Binary frames carry audio:
 | `world.go` | Map, landmarks, default channels, link-quality model |
 | `auth.go` | Shared-password login, signed session cookie |
 | `main.go` | HTTP, WebSocket, and autocert TLS |
+| `Dockerfile`, `docker-compose.yml` | Container build and public deploy |
 | `web/audio.js` | Capture, playout, and all radio sound effects |
 | `web/ptt.js` | Transmit state machine (shared by the radio and the console) |
 | `web/radio.js`, `web/console.js`, `web/map.js` | The two UIs |
