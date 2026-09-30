@@ -24,10 +24,13 @@ export class RadioAudio {
   }
 
   // Must be called from a user gesture (autoplay + mic permission rules).
-  async init() {
+  // mic / speaker: saved device IDs; a device that has gone away falls back
+  // to the system default.
+  async init({ mic = '', speaker = '' } = {}) {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.ctx = ctx;
     await ctx.resume();
+    if (speaker) await this.setSpeaker(speaker).catch(() => {});
 
     this.master = ctx.createGain();
     this.master.gain.value = 0.8;
@@ -69,31 +72,57 @@ export class RadioAudio {
 
     // Without a mic the radio still works receive-only.
     try {
-      await this.initMic();
+      await this.initMic(mic);
     } catch (e) {
       this.micError = e;
     }
   }
 
-  async initMic() {
+  async initMic(deviceId) {
     const ctx = this.ctx;
     await ctx.audioWorklet.addModule('capture-worklet.js');
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-    const mic = ctx.createMediaStreamSource(this.stream);
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -30;
     comp.ratio.value = 8;
     this.capture = new AudioWorkletNode(ctx, 'capture', { numberOfOutputs: 1 });
     this.capture.port.onmessage = (e) => this.onFrame && this.onFrame(e.data);
-    mic.connect(biquad(ctx, 'highpass', 300)).connect(biquad(ctx, 'lowpass', 3000))
-      .connect(comp).connect(this.capture);
+    this.micIn = biquad(ctx, 'highpass', 300);
+    this.micIn.connect(biquad(ctx, 'lowpass', 3000)).connect(comp).connect(this.capture);
     // Keep the worklet pulled by the graph without making it audible.
     const sink = ctx.createGain();
     sink.gain.value = 0;
     this.capture.connect(sink).connect(ctx.destination);
+
+    try {
+      await this.setMic(deviceId);
+    } catch (e) {
+      if (!deviceId || e.name !== 'OverconstrainedError') throw e;
+      await this.setMic('');
+    }
   }
+
+  // Swaps the capture source. The old stream is kept if the new one fails.
+  async setMic(deviceId) {
+    if (!this.micIn) throw new Error('audio capture unavailable');
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        ...(deviceId && { deviceId: { exact: deviceId } }),
+      },
+    });
+    this.micSource?.disconnect();
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = stream;
+    this.micSource = this.ctx.createMediaStreamSource(stream);
+    this.micSource.connect(this.micIn);
+    this.micError = null;
+  }
+
+  micId() { return this.stream?.getAudioTracks()[0]?.getSettings().deviceId || ''; }
+
+  // AudioContext.setSinkId is Chromium-only so far.
+  canSetSpeaker() { return typeof this.ctx?.setSinkId === 'function'; }
+  setSpeaker(deviceId) { return this.ctx.setSinkId(deviceId); }
 
   setVolume(v) { this.master.gain.value = v; }
 

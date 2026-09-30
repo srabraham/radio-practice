@@ -1,7 +1,7 @@
 import { RadioAudio } from './audio.js';
 import { Link, me } from './net.js';
 import { Transmitter } from './ptt.js';
-import { nearestLandmark, loginForm, logout } from './common.js';
+import { nearestLandmark, loginForm, logout, savedDevices, bindDevices } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const SCAN_HANG_MS = 3000;
@@ -23,7 +23,7 @@ loginForm({
 async function powerOn(who) {
   audio = new RadioAudio();
   try {
-    await audio.init();
+    await audio.init(savedDevices());
   } catch (e) {
     $('login-error').textContent = 'Microphone unavailable: ' + e.message;
     return;
@@ -31,7 +31,7 @@ async function powerOn(who) {
   $('login').hidden = true;
   $('radio').hidden = false;
   $('me').textContent = who.callsign;
-  if (audio.micError) $('mic-warn').textContent = `No microphone (${audio.micError.name}): receive only`;
+  bindDevices(audio);
   navigator.wakeLock?.request('screen').catch(() => {});
 
   link = new Link({ onMessage, onAudio, onStatus: (s) => ($('net').textContent = s) });

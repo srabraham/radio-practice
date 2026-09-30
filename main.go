@@ -26,7 +26,7 @@ var webFS embed.FS
 const letsEncryptStagingURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
 
 func main() {
-	addr := flag.String("addr", ":8080", "listen address for plain HTTP (ignored with -tls-domain)")
+	addr := flag.String("addr", ":8555", "listen address for plain HTTP (ignored with -tls-domain)")
 	tlsDomain := flag.String("tls-domain", "", "comma-separated public domain(s); enables automatic Let's Encrypt TLS")
 	tlsEmail := flag.String("tls-email", "", "contact email to register with Let's Encrypt, for expiry warnings")
 	tlsCache := flag.String("tls-cache", "certs", "where -tls-domain caches certificates and the ACME account key")
@@ -42,7 +42,7 @@ func main() {
 
 	hub := NewHub(defaultChannels(), defaultLandmarks(), *tot)
 	go hub.RunStateBroadcast(200*time.Millisecond, nil)
-	auth := NewAuth(participantPW, instructorPW)
+	auth := NewAuth(participantPW, instructorPW, hub.InUse)
 
 	var static fs.FS
 	if *dev {
@@ -126,6 +126,11 @@ func envOrRandom(name string) string {
 	return v
 }
 
+const (
+	closeReplaced      websocket.StatusCode = 4000
+	closeCallsignInUse websocket.StatusCode = 4001
+)
+
 func serveWS(hub *Hub, auth *Auth, w http.ResponseWriter, r *http.Request) {
 	s, ok := auth.Session(r)
 	if !ok {
@@ -144,7 +149,13 @@ func serveWS(hub *Hub, auth *Auth, w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	send := make(chan outMsg, 512)
-	c := hub.Join(s.Callsign, s.Role, send, cancel)
+	// The close codes tell the page to stop reconnecting; see net.js.
+	replaced := func() { go conn.Close(closeReplaced, "opened elsewhere") }
+	c, err := hub.Join(s.Callsign, s.Sid, s.Role, send, replaced)
+	if err != nil {
+		conn.Close(closeCallsignInUse, "callsign in use")
+		return
+	}
 	defer hub.Leave(c)
 
 	go writeLoop(ctx, conn, send, cancel)

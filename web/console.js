@@ -2,7 +2,7 @@ import { RadioAudio } from './audio.js';
 import { Link } from './net.js';
 import { Transmitter } from './ptt.js';
 import { MapView, CHANNEL_COLORS } from './map.js';
-import { loginForm, logout, nearestLandmark } from './common.js';
+import { loginForm, logout, nearestLandmark, savedDevices, bindDevices } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 function el(tag, props = {}, ...kids) {
@@ -38,7 +38,7 @@ loginForm({
 async function start(who) {
   audio = new RadioAudio({ clean: true });
   try {
-    await audio.init();
+    await audio.init(savedDevices());
   } catch (e) {
     $('login-error').textContent = 'Microphone unavailable: ' + e.message;
     return;
@@ -46,7 +46,7 @@ async function start(who) {
   $('login').hidden = true;
   $('console').hidden = false;
   $('me').textContent = who.callsign;
-  if (audio.micError) $('mic-warn').textContent = `No microphone (${audio.micError.name}): receive only`;
+  bindDevices(audio);
 
   link = new Link({ onMessage, onAudio, onStatus: (s) => ($('net').textContent = s) });
   tx = new Transmitter({ link, audio, tot: 60, onChange: renderTx });

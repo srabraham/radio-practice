@@ -11,7 +11,7 @@
     <h1>Radio Practice</h1>
     <form id="login-form">
       <label>Callsign <input id="callsign" autocomplete="nickname" maxlength="20" required></label>
-      <label id="pw-row">Password <input id="password" type="password" autocomplete="current-password" required></label>
+      <label id="pw-row">Password <input id="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required></label>
       <button type="submit">Power on</button>
       <p id="login-error" class="error"></p>
     </form>
@@ -48,6 +48,8 @@
 
       <div class="settings">
         <label>Volume <input id="volume" type="range" min="0" max="1.5" step="0.05" value="0.8"></label>
+        <label>Microphone <select id="mic-sel"></select></label>
+        <label id="spk-row">Speaker <select id="spk-sel"></select></label>
         <label>Location <select id="loc"></select></label>
         <label class="check"><input id="latch" type="checkbox"> Tap to talk / tap to stop</label>
       </div>

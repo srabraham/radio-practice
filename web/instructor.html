@@ -11,7 +11,7 @@
     <h1>Radio Control</h1>
     <form id="login-form">
       <label>Callsign <input id="callsign" value="CONTROL" maxlength="20" required></label>
-      <label id="pw-row">Instructor password <input id="password" type="password" autocomplete="current-password" required></label>
+      <label id="pw-row">Instructor password <input id="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" required></label>
       <button type="submit">Open console</button>
       <p id="login-error" class="error"></p>
     </form>
@@ -50,6 +50,8 @@
         <label class="check"><input id="latch" type="checkbox"> Tap to talk / tap to stop</label>
         <div id="tx-status" class="hint">Ready</div>
         <label>Volume <input id="volume" type="range" min="0" max="1.5" step="0.05" value="0.8"></label>
+        <label>Microphone <select id="mic-sel"></select></label>
+        <label id="spk-row">Speaker <select id="spk-sel"></select></label>
 
         <h2>Channels</h2>
         <div id="channels"></div>

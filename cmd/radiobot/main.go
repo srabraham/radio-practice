@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	server := flag.String("url", "http://localhost:8080", "server base URL")
+	server := flag.String("url", "http://localhost:8555", "server base URL")
 	callsign := flag.String("callsign", "BOT", "callsign")
 	password := flag.String("password", "", "participant password")
 	ch := flag.Int("ch", 0, "channel index (0-based)")

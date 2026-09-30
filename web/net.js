@@ -25,7 +25,17 @@ export class Link {
       // [ch u8][sid u16][quality u8][seq u16][payload]
       this.onAudio(b[0], (b[1] << 8) | b[2], b[3] / 255, b.subarray(6));
     };
-    ws.onclose = async () => {
+    ws.onclose = async (e) => {
+      // Reconnecting would just take the radio back from the other page.
+      if (e.code === 4000) {
+        this.onStatus('opened in another tab or window; reload to use it here');
+        return;
+      }
+      if (e.code === 4001) {
+        await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+        location.href = location.pathname + '?taken=1';
+        return;
+      }
       this.onStatus('offline');
       const me = await fetch('/api/me').catch(() => null);
       if (me && me.status === 401) {

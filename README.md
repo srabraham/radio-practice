@@ -10,8 +10,8 @@ instructor console. It is a single Go binary with no database.
 RADIO_PASSWORD=practice RADIO_INSTRUCTOR_PASSWORD=control go run . -dev
 ```
 
-- Radios: http://localhost:8080. Log in with any callsign and the participant password.
-- Console: http://localhost:8080/instructor.html. Use the instructor password.
+- Radios: http://localhost:8555. Log in with any callsign and the participant password.
+- Console: http://localhost:8555/instructor.html. Use the instructor password.
 - `-dev` serves `web/` from disk, so front-end edits only need a page refresh.
 - If you leave the password env vars unset, random passwords are generated and printed to the log.
 
@@ -24,7 +24,7 @@ go run ./cmd/radiobot -password practice -callsign BOT2 -ch 5 -loc 730-g -pitch 
 
 Phones need HTTPS before the browser allows the mic (localhost is the only
 exception). To test on a phone, either deploy with `-tls-domain` or use a tunnel
-such as `cloudflared tunnel --url http://localhost:8080` or `tailscale serve`.
+such as `cloudflared tunnel --url http://localhost:8555` or `tailscale serve`.
 
 ## Deploy (AWS Lightsail or EC2)
 

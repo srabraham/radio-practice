@@ -36,11 +36,25 @@ func newTestHub(tot time.Duration) *Hub {
 	return NewHub(testChannels(), defaultLandmarks(), tot)
 }
 
+// join connects callsign from its own login session ("sid-" + callsign), so
+// joining the same callsign twice looks like a reconnect.
 func join(h *Hub, callsign string, role Role) *testRadio {
-	r := &testRadio{}
-	r.Client = h.Join(callsign, role, make(chan outMsg, 1024), func() { r.kicked = true })
-	drain(r)
+	r, err := joinSession(h, callsign, "sid-"+callsign, role)
+	if err != nil {
+		panic(err)
+	}
 	return r
+}
+
+func joinSession(h *Hub, callsign, sid string, role Role) (*testRadio, error) {
+	r := &testRadio{}
+	c, err := h.Join(callsign, sid, role, make(chan outMsg, 1024), func() { r.kicked = true })
+	if err != nil {
+		return nil, err
+	}
+	r.Client = c
+	drain(r)
+	return r, nil
 }
 
 func send(h *Hub, r *testRadio, format string, args ...any) {
@@ -266,6 +280,38 @@ func TestReconnectReplacesOldConnection(t *testing.T) {
 	}
 	if h.channels[chDispatch].holder != nil {
 		t.Fatalf("old connection's transmission should have ended")
+	}
+}
+
+func TestSameCallsignFromAnotherLoginIsRefused(t *testing.T) {
+	h := newTestHub(time.Minute)
+	first, _ := joinSession(h, "ALPHA", "phone", RoleParticipant)
+
+	if !h.InUse("ALPHA", "laptop") {
+		t.Fatalf("ALPHA should be in use for another login")
+	}
+	if h.InUse("ALPHA", "phone") {
+		t.Fatalf("ALPHA should not be in use for its own login")
+	}
+
+	second, err := joinSession(h, "ALPHA", "laptop", RoleParticipant)
+	if err != ErrCallsignInUse {
+		t.Fatalf("got %v, want ErrCallsignInUse", err)
+	}
+	if second != nil {
+		t.Fatalf("refused join should not return a client")
+	}
+	if first.kicked {
+		t.Fatalf("the connected radio should not be kicked")
+	}
+	if h.byCall["ALPHA"] != first.Client {
+		t.Fatalf("the connected radio should keep the callsign")
+	}
+
+	// Once the first radio leaves, the callsign is free again.
+	h.Leave(first.Client)
+	if _, err := joinSession(h, "ALPHA", "laptop", RoleParticipant); err != nil {
+		t.Fatalf("callsign should be free after the holder leaves, got %v", err)
 	}
 }
 

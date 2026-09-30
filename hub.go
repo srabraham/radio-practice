@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type Client struct {
 	ID       uint16
 	Callsign string
 	Role     Role
+	sid      string // login session; see Join
 
 	send chan outMsg
 	kick func()
@@ -78,13 +80,20 @@ func NewHub(chans []ChannelConfig, landmarks []Landmark, tot time.Duration) *Hub
 	return h
 }
 
-// Join registers a connection. A callsign that is already connected is
-// replaced, which is what a phone reconnecting after sleep looks like.
-func (h *Hub) Join(callsign string, role Role, send chan outMsg, kick func()) *Client {
+var ErrCallsignInUse = errors.New("callsign in use")
+
+// Join registers a connection. A callsign already connected from the same
+// login session is replaced, which is what a phone reconnecting after sleep
+// (or a second tab) looks like. One connected from a different login is
+// someone else using that callsign, so the new connection is refused.
+func (h *Hub) Join(callsign, sid string, role Role, send chan outMsg, kick func()) (*Client, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	if old := h.byCall[callsign]; old != nil {
+		if old.sid != sid {
+			return nil, ErrCallsignInUse
+		}
 		h.removeLocked(old)
 		old.kick()
 	}
@@ -97,6 +106,7 @@ func (h *Hub) Join(callsign string, role Role, send chan outMsg, kick func()) *C
 		ID:       h.nextID,
 		Callsign: callsign,
 		Role:     role,
+		sid:      sid,
 		send:     send,
 		kick:     kick,
 		scanList: map[int]bool{},
@@ -126,7 +136,15 @@ func (h *Hub) Join(callsign string, role Role, send chan outMsg, kick func()) *C
 		h.sendJSON(c, h.stateLocked())
 	}
 	h.dirty = true
-	return c
+	return c, nil
+}
+
+// InUse reports whether callsign is connected from a login other than sid.
+func (h *Hub) InUse(callsign, sid string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	c := h.byCall[callsign]
+	return c != nil && c.sid != sid
 }
 
 func (h *Hub) Leave(c *Client) {

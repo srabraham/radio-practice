@@ -22,15 +22,18 @@ type Auth struct {
 	participantPW string
 	instructorPW  string
 	failures      *failureBudget
+	// inUse reports whether a callsign is on the air from another login.
+	inUse func(callsign, sid string) bool
 }
 
 type session struct {
 	Callsign string `json:"c"`
+	Sid      string `json:"s"` // random per login, tells two people on one callsign apart
 	Role     Role   `json:"r"`
 	Exp      int64  `json:"e"`
 }
 
-func NewAuth(participantPW, instructorPW string) *Auth {
+func NewAuth(participantPW, instructorPW string, inUse func(callsign, sid string) bool) *Auth {
 	// Per-process key: restarting the server logs everyone out, which is
 	// fine for a practice tool.
 	key := make([]byte, 32)
@@ -40,6 +43,7 @@ func NewAuth(participantPW, instructorPW string) *Auth {
 		participantPW: participantPW,
 		instructorPW:  instructorPW,
 		failures:      newFailureBudget(1000, time.Hour, time.Now),
+		inUse:         inUse,
 	}
 }
 
@@ -168,8 +172,19 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	a.failures.refund()
 
+	// Logging in again on the same device keeps its session, so the radio
+	// it already has open doesn't count as someone else.
+	sid := randomID()
+	if prev, ok := a.Session(r); ok && prev.Callsign == callsign && prev.Sid != "" {
+		sid = prev.Sid
+	}
+	if a.inUse(callsign, sid) {
+		http.Error(w, callsign+" is already on the air; pick another callsign", http.StatusConflict)
+		return
+	}
+
 	ttl := 24 * time.Hour
-	s := session{Callsign: callsign, Role: role, Exp: time.Now().Add(ttl).Unix()}
+	s := session{Callsign: callsign, Sid: sid, Role: role, Exp: time.Now().Add(ttl).Unix()}
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    a.issue(s),
@@ -194,6 +209,12 @@ func (a *Auth) HandleMe(w http.ResponseWriter, r *http.Request) {
 func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func randomID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

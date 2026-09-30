@@ -75,7 +75,7 @@ func login(a *Auth, password string) *httptest.ResponseRecorder {
 }
 
 func TestLoginRefusedOnceFailureBudgetIsSpent(t *testing.T) {
-	a := NewAuth("right", "control")
+	a := NewAuth("right", "control", func(string, string) bool { return false })
 	a.failures = newFailureBudget(2, time.Hour, time.Now)
 
 	if w := login(a, "right"); w.Code != http.StatusOK {
@@ -95,5 +95,33 @@ func TestLoginRefusedOnceFailureBudgetIsSpent(t *testing.T) {
 	}
 	if w.Header().Get("Retry-After") == "" {
 		t.Fatal("429 has no Retry-After header")
+	}
+}
+
+func TestLoginRefusedWhenCallsignOnTheAir(t *testing.T) {
+	a := NewAuth("right", "control", nil)
+	// Stands in for the hub: BOT1 is connected from the "phone" login.
+	a.inUse = func(callsign, sid string) bool { return callsign == "BOT1" && sid != "phone" }
+
+	w := login(a, "right")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("new login for a callsign on the air: got %d, want 409", w.Code)
+	}
+
+	// The device already holding BOT1 may log in again and keeps its session.
+	r := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"callsign":"BOT1","password":"right"}`))
+	r.AddCookie(&http.Cookie{Name: cookieName, Value: a.issue(session{Callsign: "BOT1", Sid: "phone", Role: RoleParticipant, Exp: time.Now().Add(time.Hour).Unix()})})
+	w = httptest.NewRecorder()
+	a.HandleLogin(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("login from the holding device: got %d, want 200", w.Code)
+	}
+	r = httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, c := range w.Result().Cookies() {
+		r.AddCookie(c)
+	}
+	s, ok := a.Session(r)
+	if !ok || s.Sid != "phone" {
+		t.Fatalf("got session %+v (ok=%v), want sid phone", s, ok)
 	}
 }

@@ -21,6 +21,10 @@ export async function loginForm({ onInstructor, onParticipant, want }) {
     $('callsign').value = saved.callsign;
     $('password').value = saved.password;
   }
+  if (new URLSearchParams(location.search).has('taken')) {
+    $('login-error').textContent = 'Someone else is on the air with that callsign. Pick another.';
+    history.replaceState(null, '', location.pathname);
+  }
   if (who) {
     $('callsign').value = who.callsign;
     $('callsign').readOnly = true;
@@ -60,6 +64,81 @@ function saveLogin(key, login) {
   try {
     localStorage.setItem(key, JSON.stringify(login));
   } catch {}
+}
+
+export function savedDevices() {
+  try {
+    return { mic: localStorage.getItem('rp.mic') || '', speaker: localStorage.getItem('rp.speaker') || '' };
+  } catch {
+    return {};
+  }
+}
+
+function saveDevice(kind, id) {
+  try {
+    localStorage.setItem('rp.' + kind, id);
+  } catch {}
+}
+
+// Fills the #mic-sel / #spk-sel pickers and keeps them in sync as devices
+// are plugged in or removed.
+export function bindDevices(audio) {
+  const micSel = $('mic-sel'), spkSel = $('spk-sel');
+  let speaker = savedDevices().speaker || '';
+  $('spk-row').hidden = !audio.canSetSpeaker();
+
+  const showMicError = () => {
+    $('mic-warn').textContent = audio.micError ? `No microphone (${audio.micError.name}): receive only` : '';
+  };
+
+  const fill = (sel, devices, current, noun) => {
+    sel.innerHTML = '';
+    sel.add(new Option('System default', ''));
+    // Chrome lists "default"/"communications" aliases; the first entry covers them.
+    devices.filter((d) => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
+      .forEach((d, i) => sel.add(new Option(d.label || `${noun} ${i + 1}`, d.deviceId)));
+    sel.value = [...sel.options].some((o) => o.value === current) ? current : '';
+  };
+
+  const refresh = async () => {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    const mics = all.filter((d) => d.kind === 'audioinput');
+    const spks = all.filter((d) => d.kind === 'audiooutput');
+    const track = audio.stream?.getAudioTracks()[0];
+    // The mic in use was unplugged: fall back to the default one.
+    if (track && (track.readyState === 'ended' || (audio.micId() && !mics.some((d) => d.deviceId === audio.micId())))) {
+      await audio.setMic('').catch((e) => (audio.micError = e));
+      showMicError();
+    }
+    fill(micSel, mics, savedDevices().mic ? audio.micId() : '', 'Microphone');
+    fill(spkSel, spks, speaker, 'Speaker');
+  };
+
+  micSel.onchange = async () => {
+    const id = micSel.value;
+    try {
+      await audio.setMic(id);
+      saveDevice('mic', id);
+    } catch (e) {
+      audio.micError = audio.stream ? null : e;
+      alert(`Couldn't switch microphone: ${e.message || e.name}`);
+    }
+    showMicError();
+    refresh();
+  };
+  spkSel.onchange = async () => {
+    try {
+      await audio.setSpeaker(spkSel.value);
+      speaker = spkSel.value;
+      saveDevice('speaker', speaker);
+    } catch (e) {
+      alert(`Couldn't switch speaker: ${e.message || e.name}`);
+      spkSel.value = speaker;
+    }
+  };
+  navigator.mediaDevices.addEventListener('devicechange', refresh);
+  showMicError();
+  refresh();
 }
 
 export async function logout() {
