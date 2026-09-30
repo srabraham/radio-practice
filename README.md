@@ -18,8 +18,8 @@ RADIO_PASSWORD=practice RADIO_INSTRUCTOR_PASSWORD=control go run . -dev
 Test without a microphone, or with several people, using scripted radios:
 
 ```sh
-go run ./cmd/radiobot -password practice -callsign BOT1 -ch 3 -loc 3-esp
-go run ./cmd/radiobot -password practice -callsign BOT2 -ch 3 -loc 730-g -pitch 400   # doubles with BOT1
+go run ./cmd/radiobot -password practice -callsign BOT1 -ch 5 -loc 3-esp
+go run ./cmd/radiobot -password practice -callsign BOT2 -ch 5 -loc 730-g -pitch 400   # doubles with BOT1
 ```
 
 Phones need HTTPS before the browser allows the mic (localhost is the only

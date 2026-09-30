@@ -8,7 +8,7 @@ const SCAN_HANG_MS = 3000;
 
 let audio, link, tx;
 let channels = [], landmarks = [];
-let ch = Number(localStorage.getItem('rp.ch') || 0);
+let ch = localStorage.getItem('rp.ch') === null ? null : Number(localStorage.getItem('rp.ch'));
 let scanning = localStorage.getItem('rp.scan') === '1';
 let loc = localStorage.getItem('rp.loc') || 'center-camp';
 let pos = null;
@@ -51,6 +51,7 @@ function onMessage(m) {
       channels = m.channels;
       landmarks = m.landmarks;
       tx.tot = m.tot;
+      if (ch === null) ch = Math.max(0, channels.findIndex((c) => c.default));
       if (ch >= channels.length) ch = 0;
       fillLocations();
       // The server starts every connection fresh; restore our knobs.

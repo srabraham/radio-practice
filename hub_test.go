@@ -18,8 +18,21 @@ type testRadio struct {
 	kicked bool
 }
 
+// testChannels is fixed so tests don't depend on the event's channel plan.
+func testChannels() []ChannelConfig {
+	rptrA := clockPos(6, 1850)
+	rptrB := clockPos(3, 1850)
+	return []ChannelConfig{
+		{Name: "DISPATCH", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
+		{Name: "OPS", Mode: ModeRepeater, Repeater: &rptrB, RepeaterRange: 6000},
+		{Name: "MEDICAL", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
+		{Name: "TAC 1", Mode: ModeSimplex},
+		{Name: "TAC 2", Mode: ModeSimplex},
+	}
+}
+
 func newTestHub(tot time.Duration) *Hub {
-	return NewHub(defaultChannels(), defaultLandmarks(), tot)
+	return NewHub(testChannels(), defaultLandmarks(), tot)
 }
 
 func join(h *Hub, callsign string, role Role) *testRadio {

@@ -64,18 +64,23 @@ type ChannelConfig struct {
 	Mode          Mode    `json:"mode"`
 	Repeater      *Pos    `json:"repeater,omitempty"`
 	RepeaterRange float64 `json:"repeaterRange,omitempty"`
+	// Default marks the channel a radio starts on when it has no saved channel.
+	Default bool `json:"default,omitempty"`
 }
 
 func defaultChannels() []ChannelConfig {
 	rptrA := clockPos(6, 1850)
 	rptrB := clockPos(3, 1850)
 	return []ChannelConfig{
-		{Name: "DISPATCH", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
-		{Name: "OPS", Mode: ModeRepeater, Repeater: &rptrB, RepeaterRange: 6000},
-		{Name: "MEDICAL", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
-		{Name: "TAC 1", Mode: ModeSimplex},
-		{Name: "TAC 2", Mode: ModeSimplex},
-		{Name: "CAMP", Mode: ModeSimplex},
+		{Name: "brc 911 alt", Mode: ModeSimplex},
+		{Name: "BRC 911", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
+		{Name: "Ranger Admin", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
+		{Name: "Control 1", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000, Default: true},
+		{Name: "Control 2", Mode: ModeRepeater, Repeater: &rptrB, RepeaterRange: 6000},
+		{Name: "tac 1", Mode: ModeSimplex},
+		{Name: "tac 2", Mode: ModeSimplex},
+		{Name: "tac 3", Mode: ModeSimplex},
+		{Name: "Ranger Talk", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
 	}
 }
 

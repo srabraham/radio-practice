@@ -423,6 +423,7 @@ func (h *Hub) channelInfo() []map[string]any {
 		out = append(out, map[string]any{
 			"id": ch.id, "name": ch.Name, "mode": ch.Mode,
 			"repeater": ch.Repeater, "repeaterRange": ch.RepeaterRange,
+			"default": ch.Default,
 		})
 	}
 	return out
