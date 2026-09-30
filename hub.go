@@ -77,7 +77,7 @@ func NewHub(chans []ChannelConfig, landmarks []Landmark, tot time.Duration) *Hub
 		clients:   map[uint16]*Client{},
 		byCall:    map[string]*Client{},
 		tot:       tot,
-		rptrDelay: 500 * time.Millisecond,
+		rptrDelay: 1000 * time.Millisecond,
 	}
 	for i, cfg := range chans {
 		h.channels = append(h.channels, &channel{ChannelConfig: cfg, id: i, txers: map[*Client]bool{}})
