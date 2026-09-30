@@ -1,4 +1,4 @@
-// Resamples the (already band-limited) mic signal to 8 kHz, μ-law encodes it,
+// Resamples the (already band-limited, gated) mic signal to 8 kHz, μ-law encodes it,
 // and posts 20 ms frames (160 bytes) to the main thread while active.
 
 const FRAME = 160;
@@ -50,3 +50,52 @@ class CaptureProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('capture', CaptureProcessor);
+
+// Noise gate on the mic, ahead of the compressor. Sound from across the room,
+// most importantly another radio's speaker, stays below the threshold and never
+// goes out. Without it two devices near each other feed back.
+class GateProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: 'threshold', defaultValue: -45, minValue: -100, maxValue: 0, automationRate: 'k-rate' }];
+  }
+
+  constructor() {
+    super();
+    this.env = 0;
+    this.gain = 0;
+    this.hold = 0;
+    const coef = (secs) => 1 - Math.exp(-1 / (secs * sampleRate));
+    this.envAttack = coef(0.002);
+    this.envRelease = coef(0.1);
+    this.gainOpen = coef(0.002);
+    this.gainClose = coef(0.05);
+    // Keeps the gate open through the gaps between words.
+    this.holdLen = Math.round(0.3 * sampleRate);
+    this.reportLen = Math.round(0.05 * sampleRate);
+    this.sinceReport = 0;
+  }
+
+  process(inputs, outputs, params) {
+    const input = inputs[0], output = outputs[0];
+    if (!input || !input[0]) return true;
+    const open = Math.pow(10, params.threshold[0] / 20);
+    for (let i = 0; i < input[0].length; i++) {
+      const a = Math.abs(input[0][i]);
+      this.env += (a - this.env) * (a > this.env ? this.envAttack : this.envRelease);
+      if (this.env > open) this.hold = this.holdLen;
+      else if (this.hold > 0) this.hold--;
+      const target = this.hold > 0 ? 1 : 0;
+      this.gain += (target - this.gain) * (target ? this.gainOpen : this.gainClose);
+      for (let c = 0; c < output.length; c++) output[c][i] = (input[c] || input[0])[i] * this.gain;
+    }
+    // Level for the settings meter, on the same scale as the threshold.
+    this.sinceReport += input[0].length;
+    if (this.sinceReport >= this.reportLen) {
+      this.sinceReport = 0;
+      this.port.postMessage({ db: 20 * Math.log10(this.env + 1e-9), open: this.hold > 0 });
+    }
+    return true;
+  }
+}
+
+registerProcessor('gate', GateProcessor);

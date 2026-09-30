@@ -83,12 +83,33 @@ function saveDevice(kind, id) {
   } catch {}
 }
 
+const METER_MIN_DB = -80;
+
 // Fills the #mic-sel / #spk-sel pickers and keeps them in sync as devices
 // are plugged in or removed.
 export function bindDevices(audio) {
   const micSel = $('mic-sel'), spkSel = $('spk-sel');
   let speaker = savedDevices().speaker || '';
   $('spk-row').hidden = !audio.canSetSpeaker();
+
+  // The meter shows the mic level against the gate threshold (the tick), and
+  // turns green while the gate is open, i.e. while you would be heard.
+  const sens = $('mic-sens');
+  const meter = $('mic-meter'), level = meter.querySelector('.meter-fill');
+  const pct = (db) => Math.max(0, Math.min(100, (db - METER_MIN_DB) / -METER_MIN_DB * 100)) + '%';
+  const setSens = () => meter.style.setProperty('--mark', pct(audio.setMicSensitivity(Number(sens.value))));
+  try {
+    sens.value = localStorage.getItem('rp.micSens') ?? sens.value;
+  } catch {}
+  setSens();
+  sens.oninput = () => {
+    setSens();
+    saveDevice('micSens', sens.value);
+  };
+  audio.onMicLevel = ({ db, open }) => {
+    level.style.width = pct(db);
+    meter.classList.toggle('open', open);
+  };
 
   const showMicError = () => {
     $('mic-warn').textContent = audio.micError ? `No microphone (${audio.micError.name}): receive only` : '';

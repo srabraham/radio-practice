@@ -21,6 +21,7 @@ export class RadioAudio {
     this.clean = clean;
     this.streams = new Map();
     this.onFrame = null;
+    this.onMicLevel = null; // ({ db, open }) about 20 times a second
   }
 
   // Must be called from a user gesture (autoplay + mic permission rules).
@@ -86,8 +87,10 @@ export class RadioAudio {
     comp.ratio.value = 8;
     this.capture = new AudioWorkletNode(ctx, 'capture', { numberOfOutputs: 1 });
     this.capture.port.onmessage = (e) => this.onFrame && this.onFrame(e.data);
+    this.gate = new AudioWorkletNode(ctx, 'gate');
+    this.gate.port.onmessage = (e) => this.onMicLevel && this.onMicLevel(e.data);
     this.micIn = biquad(ctx, 'highpass', 300);
-    this.micIn.connect(biquad(ctx, 'lowpass', 3000)).connect(comp).connect(this.capture);
+    this.micIn.connect(biquad(ctx, 'lowpass', 3000)).connect(this.gate).connect(comp).connect(this.capture);
     // Keep the worklet pulled by the graph without making it audible.
     const sink = ctx.createGain();
     sink.gain.value = 0;
@@ -106,7 +109,9 @@ export class RadioAudio {
     if (!this.micIn) throw new Error('audio capture unavailable');
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        // AGC would boost distant sound (e.g. a nearby radio's speaker) in the
+        // pauses between speech, which is what drives feedback between devices.
+        echoCancellation: true, noiseSuppression: true, autoGainControl: false,
         ...(deviceId && { deviceId: { exact: deviceId } }),
       },
     });
@@ -125,6 +130,14 @@ export class RadioAudio {
   setSpeaker(deviceId) { return this.ctx.setSinkId(deviceId); }
 
   setVolume(v) { this.master.gain.value = v; }
+
+  // s: 0 (only loud, close speech gets through) .. 1 (picks up nearly anything).
+  // Returns the gate threshold in dBFS.
+  setMicSensitivity(s) {
+    const db = -20 - s * 45;
+    this.gate?.parameters.get('threshold').setValueAtTime(db, this.ctx.currentTime);
+    return db;
+  }
 
   startCapture() { this.capture?.port.postMessage({ active: true }); }
   stopCapture() { this.capture?.port.postMessage({ active: false }); }
