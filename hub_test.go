@@ -32,8 +32,12 @@ func testChannels() []ChannelConfig {
 	}
 }
 
+// newTestHub turns off repeater key-up latency so tests can send audio right
+// after keying; TestRepeaterClipsStartOfTransmission covers it.
 func newTestHub(tot time.Duration) *Hub {
-	return NewHub(testChannels(), defaultLandmarks(), tot)
+	h := NewHub(testChannels(), defaultLandmarks(), tot)
+	h.rptrDelay = 0
+	return h
 }
 
 // join connects callsign from its own login session ("sid-" + callsign), so
@@ -131,6 +135,41 @@ func TestRepeaterFloorControl(t *testing.T) {
 	ctrl, _ = drain(b)
 	if !hasMsg(ctrl, "tx_ok", "", nil) {
 		t.Fatalf("BRAVO should get the floor after ALPHA unkeys, got %v", ctrl)
+	}
+}
+
+func TestRepeaterClipsStartOfTransmission(t *testing.T) {
+	h := newTestHub(time.Minute)
+	h.rptrDelay = 50 * time.Millisecond
+	a := join(h, "ALPHA", RoleParticipant)
+	b := join(h, "BRAVO", RoleParticipant)
+
+	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
+	h.Audio(a.Client, frame)
+	if _, audio := drain(b); len(audio) != 0 {
+		t.Fatalf("audio right after the talk-permit tone should be clipped, got %d frames", len(audio))
+	}
+
+	time.Sleep(80 * time.Millisecond)
+	h.Audio(a.Client, frame)
+	if _, audio := drain(b); len(audio) != 1 {
+		t.Fatalf("audio after the repeater delay should go out, got %d frames", len(audio))
+	}
+}
+
+func TestSimplexIsNotClipped(t *testing.T) {
+	h := newTestHub(time.Minute)
+	h.rptrDelay = time.Minute
+	a := join(h, "ALPHA", RoleParticipant)
+	b := join(h, "BRAVO", RoleParticipant)
+	send(h, a, `{"t":"tune","ch":%d}`, chTac1)
+	send(h, b, `{"t":"tune","ch":%d}`, chTac1)
+	drain(b)
+
+	send(h, a, `{"t":"key","ch":%d}`, chTac1)
+	h.Audio(a.Client, frame)
+	if _, audio := drain(b); len(audio) != 1 {
+		t.Fatalf("simplex keys immediately and should not be clipped, got %d frames", len(audio))
 	}
 }
 

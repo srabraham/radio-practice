@@ -7,7 +7,8 @@
 //   any ──up──▶ idle
 //
 // Capture starts on press even for digital, so anything said before the
-// talk-permit tone is lost, just like a real repeater.
+// talk-permit tone is lost, just like a real repeater. The server also drops
+// the first half second after the tone, mimicking repeater key-up latency.
 
 export class Transmitter {
   constructor({ link, audio, tot, onChange }) {

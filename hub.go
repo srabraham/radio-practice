@@ -45,6 +45,9 @@ type transmission struct {
 	vog   bool
 	start time.Time
 	timer *time.Timer
+	// Repeater key-up latency: audio before this never goes out, so the
+	// first moments after the talk-permit tone are clipped.
+	audioAt time.Time
 }
 
 type channel struct {
@@ -64,6 +67,7 @@ type Hub struct {
 	nextZone  int
 	nextID    uint16
 	tot       time.Duration
+	rptrDelay time.Duration
 	dirty     bool
 }
 
@@ -73,6 +77,7 @@ func NewHub(chans []ChannelConfig, landmarks []Landmark, tot time.Duration) *Hub
 		clients:   map[uint16]*Client{},
 		byCall:    map[string]*Client{},
 		tot:       tot,
+		rptrDelay: 500 * time.Millisecond,
 	}
 	for i, cfg := range chans {
 		h.channels = append(h.channels, &channel{ChannelConfig: cfg, id: i, txers: map[*Client]bool{}})
@@ -323,6 +328,9 @@ func (h *Hub) voiceOfGodLocked(c *Client) {
 
 func (h *Hub) startTxLocked(c *Client, chs []int, vog bool) {
 	tx := &transmission{chs: chs, vog: vog, start: time.Now()}
+	if h.channels[chs[0]].Mode == ModeRepeater {
+		tx.audioAt = tx.start.Add(h.rptrDelay)
+	}
 	tx.timer = time.AfterFunc(h.tot, func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -392,7 +400,7 @@ func (h *Hub) Audio(c *Client, frame []byte) {
 	defer h.mu.Unlock()
 
 	tx := c.tx
-	if tx == nil {
+	if tx == nil || time.Now().Before(tx.audioAt) {
 		return
 	}
 	uplinks := make([]float64, len(tx.chs))
