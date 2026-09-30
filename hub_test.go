@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -139,22 +140,24 @@ func TestRepeaterFloorControl(t *testing.T) {
 }
 
 func TestRepeaterClipsStartOfTransmission(t *testing.T) {
-	h := newTestHub(time.Minute)
-	h.rptrDelay = 50 * time.Millisecond
-	a := join(h, "ALPHA", RoleParticipant)
-	b := join(h, "BRAVO", RoleParticipant)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTestHub(time.Minute)
+		h.rptrDelay = time.Second
+		a := join(h, "ALPHA", RoleParticipant)
+		b := join(h, "BRAVO", RoleParticipant)
 
-	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
-	h.Audio(a.Client, frame)
-	if _, audio := drain(b); len(audio) != 0 {
-		t.Fatalf("audio right after the talk-permit tone should be clipped, got %d frames", len(audio))
-	}
+		send(h, a, `{"t":"key","ch":%d}`, chDispatch)
+		h.Audio(a.Client, frame)
+		if _, audio := drain(b); len(audio) != 0 {
+			t.Fatalf("audio right after the talk-permit tone should be clipped, got %d frames", len(audio))
+		}
 
-	time.Sleep(80 * time.Millisecond)
-	h.Audio(a.Client, frame)
-	if _, audio := drain(b); len(audio) != 1 {
-		t.Fatalf("audio after the repeater delay should go out, got %d frames", len(audio))
-	}
+		time.Sleep(time.Second)
+		h.Audio(a.Client, frame)
+		if _, audio := drain(b); len(audio) != 1 {
+			t.Fatalf("audio after the repeater delay should go out, got %d frames", len(audio))
+		}
+	})
 }
 
 func TestSimplexIsNotClipped(t *testing.T) {
@@ -248,23 +251,27 @@ func TestSimplexRange(t *testing.T) {
 }
 
 func TestTimeOutTimerEndsTransmission(t *testing.T) {
-	h := newTestHub(30 * time.Millisecond)
-	a := join(h, "ALPHA", RoleParticipant)
-	b := join(h, "BRAVO", RoleParticipant)
+	synctest.Test(t, func(t *testing.T) {
+		h := newTestHub(time.Minute)
+		a := join(h, "ALPHA", RoleParticipant)
+		b := join(h, "BRAVO", RoleParticipant)
 
-	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
-	drain(a)
-	time.Sleep(80 * time.Millisecond)
+		send(h, a, `{"t":"key","ch":%d}`, chDispatch)
+		drain(a)
+		time.Sleep(time.Minute)
+		// The TOT fires in an AfterFunc goroutine; let it finish.
+		synctest.Wait()
 
-	ctrl, _ := drain(a)
-	if !hasMsg(ctrl, "tx_end", "reason", "tot") {
-		t.Fatalf("ALPHA should be cut off by the TOT, got %v", ctrl)
-	}
-	send(h, b, `{"t":"key","ch":%d}`, chDispatch)
-	ctrl, _ = drain(b)
-	if !hasMsg(ctrl, "tx_ok", "", nil) {
-		t.Fatalf("floor should be free after TOT, got %v", ctrl)
-	}
+		ctrl, _ := drain(a)
+		if !hasMsg(ctrl, "tx_end", "reason", "tot") {
+			t.Fatalf("ALPHA should be cut off by the TOT, got %v", ctrl)
+		}
+		send(h, b, `{"t":"key","ch":%d}`, chDispatch)
+		ctrl, _ = drain(b)
+		if !hasMsg(ctrl, "tx_ok", "", nil) {
+			t.Fatalf("floor should be free after TOT, got %v", ctrl)
+		}
+	})
 }
 
 func TestInstructorForceUnkeyAndMonitor(t *testing.T) {

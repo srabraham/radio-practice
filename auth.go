@@ -42,7 +42,7 @@ func NewAuth(participantPW, instructorPW string, inUse func(callsign, sid string
 		key:           key,
 		participantPW: participantPW,
 		instructorPW:  instructorPW,
-		failures:      newFailureBudget(1000, time.Hour, time.Now),
+		failures:      newFailureBudget(1000, time.Hour),
 		inUse:         inUse,
 	}
 }
@@ -57,21 +57,19 @@ type failureBudget struct {
 	perSec float64
 	tokens float64
 	last   time.Time
-	now    func() time.Time
 }
 
-func newFailureBudget(max int, window time.Duration, now func() time.Time) *failureBudget {
+func newFailureBudget(max int, window time.Duration) *failureBudget {
 	return &failureBudget{
 		max:    float64(max),
 		perSec: float64(max) / window.Seconds(),
 		tokens: float64(max),
-		last:   now(),
-		now:    now,
+		last:   time.Now(),
 	}
 }
 
 func (b *failureBudget) refill() {
-	t := b.now()
+	t := time.Now()
 	b.tokens = min(b.max, b.tokens+t.Sub(b.last).Seconds()*b.perSec)
 	b.last = t
 }
