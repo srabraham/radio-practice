@@ -21,7 +21,10 @@ export async function loginForm({ onInstructor, onParticipant, want }) {
     $('callsign').value = saved.callsign;
     $('password').value = saved.password;
   }
-  if (new URLSearchParams(location.search).has('taken')) {
+  const params = new URLSearchParams(location.search);
+  // Shareable links like /?p=practice fill in the password.
+  if (params.has('p')) $('password').value = params.get('p');
+  if (params.has('taken')) {
     $('login-error').textContent = 'Someone else is on the air with that callsign. Pick another.';
     history.replaceState(null, '', location.pathname);
   }
