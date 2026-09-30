@@ -61,6 +61,8 @@ export class Transmitter {
         this.reason = m.reason;
         break;
       case 'tx_end':
+        // Crossed with our own unkey: the user already let go.
+        if (this.state === 'idle') return;
         this.stop();
         if (m.reason === 'vog') {
           this.audio.toneBusy();

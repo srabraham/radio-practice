@@ -34,8 +34,12 @@ func main() {
 	hc := &http.Client{Jar: jar}
 	body, _ := json.Marshal(map[string]string{"callsign": *callsign, "password": *password})
 	resp, err := hc.Post(*server+"/api/login", "application/json", bytes.NewReader(body))
-	if err != nil || resp.StatusCode != 200 {
-		log.Fatalf("login failed: %v %v", err, resp.Status)
+	if err != nil {
+		log.Fatalf("login failed: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("login failed: %s", resp.Status)
 	}
 
 	u, _ := url.Parse(*server)

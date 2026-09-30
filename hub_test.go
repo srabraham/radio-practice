@@ -17,7 +17,8 @@ const (
 
 type testRadio struct {
 	*Client
-	kicked bool
+	kicked     bool
+	kickReason KickReason
 }
 
 // testChannels is fixed so tests don't depend on the event's channel plan.
@@ -53,7 +54,9 @@ func join(h *Hub, callsign string, role Role) *testRadio {
 
 func joinSession(h *Hub, callsign, sid string, role Role) (*testRadio, error) {
 	r := &testRadio{}
-	c, err := h.Join(callsign, sid, role, make(chan outMsg, 1024), func() { r.kicked = true })
+	c, err := h.Join(callsign, sid, role, make(chan outMsg, 1024), func(why KickReason) {
+		r.kicked, r.kickReason = true, why
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -317,8 +320,8 @@ func TestReconnectReplacesOldConnection(t *testing.T) {
 	send(h, old, `{"t":"key","ch":%d}`, chDispatch)
 
 	fresh := join(h, "ALPHA", RoleParticipant)
-	if !old.kicked {
-		t.Fatalf("old connection should be kicked")
+	if !old.kicked || old.kickReason != KickReplaced {
+		t.Fatalf("old connection should be kicked as replaced, got kicked=%v reason=%v", old.kicked, old.kickReason)
 	}
 	h.Leave(old.Client) // the old handler exiting must not remove the new one
 	if h.byCall["ALPHA"] != fresh.Client {
@@ -504,5 +507,67 @@ func TestVoiceOfGodDoesNotCutAnotherVoiceOfGod(t *testing.T) {
 	ctrl, _ = drain(ctl1)
 	if hasMsg(ctrl, "tx_end", "", nil) || ctl1.tx == nil {
 		t.Fatalf("the first Voice of God should keep going, got %v", ctrl)
+	}
+}
+
+func TestReplacedConnectionIsIgnored(t *testing.T) {
+	h := newTestHub(time.Minute)
+	old := join(h, "ALPHA", RoleParticipant)
+	b := join(h, "BRAVO", RoleParticipant)
+	join(h, "ALPHA", RoleParticipant)
+	drain(b)
+
+	// The old connection is still closing when these arrive.
+	send(h, old, `{"t":"key","ch":%d}`, chDispatch)
+	if h.channels[chDispatch].holder != nil {
+		t.Fatalf("a replaced connection must not take the floor")
+	}
+	old.tx = &transmission{chs: []int{chDispatch}, timer: time.NewTimer(time.Hour)}
+	h.Audio(old.Client, frame)
+	if _, audio := drain(b); len(audio) != 0 {
+		t.Fatalf("audio from a replaced connection must not be forwarded, got %d frames", len(audio))
+	}
+}
+
+func TestSlowClientIsKickedToReconnect(t *testing.T) {
+	h := newTestHub(time.Minute)
+	a := join(h, "ALPHA", RoleParticipant)
+	// Room for hello and nothing else.
+	slow := &testRadio{}
+	c, err := h.Join("SLOW", "sid-SLOW", RoleParticipant, make(chan outMsg, 1), func(why KickReason) {
+		slow.kicked, slow.kickReason = true, why
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slow.Client = c
+
+	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
+	if !slow.kicked || slow.kickReason != KickTooSlow {
+		t.Fatalf("a client with a full queue should be kicked as too slow, got kicked=%v reason=%v", slow.kicked, slow.kickReason)
+	}
+}
+
+func TestReconnectKeepsPlacementFromControl(t *testing.T) {
+	h := newTestHub(time.Minute)
+	a := join(h, "ALPHA", RoleParticipant)
+	ctl := join(h, "CONTROL", RoleInstructor)
+	send(h, ctl, `{"t":"move","id":%d,"x":1234,"y":-567}`, a.ID)
+
+	// A phone's socket drops when the screen sleeps, then it reconnects.
+	h.Leave(a.Client)
+	a = join(h, "ALPHA", RoleParticipant)
+	if a.pos != (Pos{X: 1234, Y: -567}) || a.loc != "" {
+		t.Fatalf("reconnect should keep Control's placement, got pos %v loc %q", a.pos, a.loc)
+	}
+
+	// A different login for the same callsign starts fresh.
+	h.Leave(a.Client)
+	b, err := joinSession(h, "ALPHA", "another-login", RoleParticipant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.loc != "center-camp" {
+		t.Fatalf("a new login should start at Center Camp, got loc %q", b.loc)
 	}
 }

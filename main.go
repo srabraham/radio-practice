@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -149,9 +150,19 @@ func serveWS(hub *Hub, auth *Auth, w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	send := make(chan outMsg, 512)
-	// The close codes tell the page to stop reconnecting; see net.js.
-	replaced := func() { go conn.Close(closeReplaced, "opened elsewhere") }
-	c, err := hub.Join(s.Callsign, s.Sid, s.Role, send, replaced)
+	// The 4xxx close codes tell the page to stop reconnecting; see net.js.
+	// A slow client can trip the kick on every message, so close only once.
+	var kickOnce sync.Once
+	kick := func(why KickReason) {
+		kickOnce.Do(func() {
+			if why == KickReplaced {
+				go conn.Close(closeReplaced, "opened elsewhere")
+			} else {
+				go conn.Close(websocket.StatusTryAgainLater, "too slow")
+			}
+		})
+	}
+	c, err := hub.Join(s.Callsign, s.Sid, s.Role, send, kick)
 	if err != nil {
 		conn.Close(closeCallsignInUse, "callsign in use")
 		return

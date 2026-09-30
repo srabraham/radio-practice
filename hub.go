@@ -21,6 +21,19 @@ type outMsg struct {
 	data   []byte
 }
 
+// KickReason says why the hub is dropping a connection, which decides whether
+// the page should reconnect.
+type KickReason int
+
+const (
+	// KickReplaced: the same login connected again (another tab, or a phone
+	// reconnecting). The old page must not reconnect and take the radio back.
+	KickReplaced KickReason = iota
+	// KickTooSlow: the client fell behind on control messages. It should
+	// reconnect and get fresh state.
+	KickTooSlow
+)
+
 type Client struct {
 	ID       uint16
 	Callsign string
@@ -28,7 +41,7 @@ type Client struct {
 	sid      string // login session; see Join
 
 	send chan outMsg
-	kick func()
+	kick func(KickReason)
 
 	// Everything below is guarded by Hub.mu.
 	channel  int
@@ -50,6 +63,11 @@ type transmission struct {
 	audioAt time.Time
 }
 
+type placement struct {
+	pos Pos
+	loc string
+}
+
 type channel struct {
 	ChannelConfig
 	id     int
@@ -63,21 +81,25 @@ type Hub struct {
 	landmarks []Landmark
 	clients   map[uint16]*Client
 	byCall    map[string]*Client
-	zones     []Zone
-	nextZone  int
-	nextID    uint16
-	tot       time.Duration
-	rptrDelay time.Duration
-	dirty     bool
+	// Where each disconnected login's radio was, so a phone that drops its
+	// socket when the screen sleeps comes back where Control put it.
+	placements map[string]placement
+	zones      []Zone
+	nextZone   int
+	nextID     uint16
+	tot        time.Duration
+	rptrDelay  time.Duration
+	dirty      bool
 }
 
 func NewHub(chans []ChannelConfig, landmarks []Landmark, tot time.Duration) *Hub {
 	h := &Hub{
-		landmarks: landmarks,
-		clients:   map[uint16]*Client{},
-		byCall:    map[string]*Client{},
-		tot:       tot,
-		rptrDelay: 1000 * time.Millisecond,
+		landmarks:  landmarks,
+		clients:    map[uint16]*Client{},
+		byCall:     map[string]*Client{},
+		placements: map[string]placement{},
+		tot:        tot,
+		rptrDelay:  1000 * time.Millisecond,
 	}
 	for i, cfg := range chans {
 		h.channels = append(h.channels, &channel{ChannelConfig: cfg, id: i, txers: map[*Client]bool{}})
@@ -91,7 +113,7 @@ var ErrCallsignInUse = errors.New("callsign in use")
 // login session is replaced, which is what a phone reconnecting after sleep
 // (or a second tab) looks like. One connected from a different login is
 // someone else using that callsign, so the new connection is refused.
-func (h *Hub) Join(callsign, sid string, role Role, send chan outMsg, kick func()) (*Client, error) {
+func (h *Hub) Join(callsign, sid string, role Role, send chan outMsg, kick func(KickReason)) (*Client, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -100,7 +122,7 @@ func (h *Hub) Join(callsign, sid string, role Role, send chan outMsg, kick func(
 			return nil, ErrCallsignInUse
 		}
 		h.removeLocked(old)
-		old.kick()
+		old.kick(KickReplaced)
 	}
 
 	h.nextID++
@@ -116,9 +138,14 @@ func (h *Hub) Join(callsign, sid string, role Role, send chan outMsg, kick func(
 		kick:     kick,
 		scanList: map[int]bool{},
 		monitor:  map[int]bool{},
-		loc:      "center-camp",
 	}
-	c.pos = h.landmark(c.loc).Pos
+	if p, ok := h.placements[sid]; ok {
+		c.pos, c.loc = p.pos, p.loc
+		delete(h.placements, sid)
+	} else {
+		c.loc = "center-camp"
+		c.pos = h.landmark(c.loc).Pos
+	}
 	if role == RoleInstructor {
 		for _, ch := range h.channels {
 			c.monitor[ch.id] = true
@@ -155,13 +182,20 @@ func (h *Hub) InUse(callsign, sid string) bool {
 func (h *Hub) Leave(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.clients[c.ID] == c {
+	if h.connectedLocked(c) {
 		h.removeLocked(c)
 	}
 }
 
+// connectedLocked is false once c has left or been replaced. A replaced
+// connection keeps reading until its close finishes, and anything it sends
+// meanwhile must not touch the hub: a key would hold the floor with nobody
+// left to release it.
+func (h *Hub) connectedLocked(c *Client) bool { return h.clients[c.ID] == c }
+
 func (h *Hub) removeLocked(c *Client) {
 	h.endTxLocked(c, "")
+	h.placements[c.sid] = placement{pos: c.pos, loc: c.loc}
 	delete(h.clients, c.ID)
 	if h.byCall[c.Callsign] == c {
 		delete(h.byCall, c.Callsign)
@@ -192,6 +226,9 @@ func (h *Hub) HandleJSON(c *Client, data []byte) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if !h.connectedLocked(c) {
+		return
+	}
 
 	switch m.T {
 	case "key":
@@ -400,7 +437,7 @@ func (h *Hub) Audio(c *Client, frame []byte) {
 	defer h.mu.Unlock()
 
 	tx := c.tx
-	if tx == nil || time.Now().Before(tx.audioAt) {
+	if tx == nil || !h.connectedLocked(c) || time.Now().Before(tx.audioAt) {
 		return
 	}
 	uplinks := make([]float64, len(tx.chs))
@@ -499,7 +536,7 @@ func (h *Hub) sendJSON(c *Client, v any) {
 	default:
 		// A client that can't keep up with control messages is effectively
 		// dead; drop it so it reconnects with fresh state.
-		c.kick()
+		c.kick(KickTooSlow)
 	}
 }
 

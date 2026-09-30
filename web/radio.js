@@ -10,7 +10,8 @@ let audio, link, tx;
 let channels = [], landmarks = [];
 let ch = localStorage.getItem('rp.ch') === null ? null : Number(localStorage.getItem('rp.ch'));
 let scanning = localStorage.getItem('rp.scan') === '1';
-let loc = localStorage.getItem('rp.loc') || 'center-camp';
+// '' means Control moved the radio off any landmark.
+let loc = localStorage.getItem('rp.loc') ?? 'center-camp';
 let pos = null;
 let landed = null; // while scanning: { ch, until } for the channel we stopped on
 const callers = new Map(); // "ch:sid" -> callsign (digital caller ID)
@@ -54,12 +55,20 @@ function onMessage(m) {
       if (!Number.isInteger(ch) || ch < 0 || ch >= channels.length) {
         ch = Math.max(0, channels.findIndex((c) => c.default));
       }
-      fillLocations();
       // The server starts every connection fresh; restore our knobs.
       link.send({ t: 'tune', ch });
       link.send({ t: 'scan', on: scanning, list: channels.map((c) => c.id) });
-      link.send({ t: 'pos', loc });
-      pos = landmarks.find((l) => l.id === loc)?.pos;
+      // Except position after Control moved us: the server remembers that
+      // for this login, and a landmark can't express it anyway.
+      if (landmarks.some((l) => l.id === loc)) {
+        link.send({ t: 'pos', loc });
+        pos = landmarks.find((l) => l.id === loc).pos;
+      } else {
+        loc = m.loc;
+        pos = m.pos;
+        localStorage.setItem('rp.loc', loc);
+      }
+      fillLocations();
       break;
     case 'rx_start':
       if (m.from) callers.set(m.ch + ':' + m.sid, m.from);
@@ -71,6 +80,7 @@ function onMessage(m) {
     case 'pos':
       pos = m.pos;
       loc = m.loc || '';
+      localStorage.setItem('rp.loc', loc);
       fillLocations();
       break;
     case 'prompt':
