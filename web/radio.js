@@ -51,8 +51,9 @@ function onMessage(m) {
       channels = m.channels;
       landmarks = m.landmarks;
       tx.tot = m.tot;
-      if (ch === null) ch = Math.max(0, channels.findIndex((c) => c.default));
-      if (ch >= channels.length) ch = 0;
+      if (!Number.isInteger(ch) || ch < 0 || ch >= channels.length) {
+        ch = Math.max(0, channels.findIndex((c) => c.default));
+      }
       fillLocations();
       // The server starts every connection fresh; restore our knobs.
       link.send({ t: 'tune', ch });
@@ -107,7 +108,7 @@ function displayChannel() {
 
 function bindControls() {
   const tune = (d) => {
-    if (tx.keyed) return;
+    if (tx.keyed || !channels.length) return;
     ch = (ch + d + channels.length) % channels.length;
     localStorage.setItem('rp.ch', ch);
     landed = null;
