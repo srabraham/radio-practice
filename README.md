@@ -46,8 +46,7 @@ Global setup builds the server once, and each Playwright worker runs its own
 copy on a free port, so tests never hear each other. Most tests replace `getUserMedia` with a synthetic tone so every
 browser gets the same mic, and check what was played by tapping the page's
 `AudioContext` output (`e2e/harness/page-audio.js`). `native-mic.spec.ts` uses
-each browser's own fake capture device instead. CI runs the suite on Linux,
-macOS and Windows.
+each browser's own fake capture device instead.
 
 ## Deploy (AWS Lightsail or EC2)
 
