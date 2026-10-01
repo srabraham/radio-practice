@@ -112,7 +112,26 @@ export function bindDevices(audio) {
   };
 
   const showMicError = () => {
-    $('mic-warn').textContent = audio.micError ? `No microphone (${audio.micError.name}): receive only` : '';
+    $('mic-warn').hidden = !audio.micError;
+    $('mic-msg').textContent = audio.micError ? micErrorText(audio.micError) : '';
+  };
+  $('mic-retry').onclick = async () => {
+    $('mic-retry').disabled = true;
+    try {
+      await audio.retryMic(savedDevices().mic);
+      audio.micError = null;
+    } catch (e) {
+      audio.micError = e;
+      // A blocked mic usually fails again instantly without a prompt.
+      if (e.name === 'NotAllowedError') {
+        $('mic-msg').textContent = 'Microphone still blocked. Allow it in your browser\'s site settings (the icon by the address bar), then try again.';
+        $('mic-retry').disabled = false;
+        return;
+      }
+    }
+    $('mic-retry').disabled = false;
+    showMicError();
+    refresh();
   };
 
   const fill = (sel, devices, current, noun) => {
@@ -163,6 +182,15 @@ export function bindDevices(audio) {
   navigator.mediaDevices.addEventListener('devicechange', refresh);
   showMicError();
   refresh();
+}
+
+function micErrorText(e) {
+  switch (e.name) {
+    case 'NotAllowedError': return 'Microphone access is blocked. You can listen but not transmit.';
+    case 'NotFoundError': return 'No microphone found. You can listen but not transmit.';
+    case 'NotReadableError': return 'Microphone is in use by another app. You can listen but not transmit.';
+    default: return 'Microphone unavailable. You can listen but not transmit.';
+  }
 }
 
 export async function logout() {

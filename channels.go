@@ -29,5 +29,6 @@ func defaultChannels() []ChannelConfig {
 		{Name: "tac 2", Mode: ModeSimplex},
 		{Name: "tac 3", Mode: ModeSimplex},
 		{Name: "Ranger Talk", Mode: ModeRepeater},
+		{Name: "Ranger HQ", Mode: ModeRepeater},
 	}
 }

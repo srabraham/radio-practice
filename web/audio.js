@@ -95,6 +95,17 @@ export class RadioAudio {
     sink.gain.value = 0;
     this.capture.connect(sink).connect(ctx.destination);
 
+    await this.openMic(deviceId);
+  }
+
+  // Another go at the mic after init failed, e.g. the user blocked it by
+  // mistake. Must be called from a user gesture.
+  async retryMic(deviceId) {
+    if (!this.micIn) await this.initMic(deviceId);
+    else await this.openMic(deviceId);
+  }
+
+  async openMic(deviceId) {
     try {
       await this.setMic(deviceId);
     } catch (e) {
