@@ -21,6 +21,7 @@ export class RadioAudio {
     this.streams = new Map();
     this.onFrame = null;
     this.onMicLevel = null; // ({ db, open }) about 20 times a second
+    this.onSpeakerState = null; // the AudioContext started or stopped running
   }
 
   // Must be called from a user gesture (autoplay + mic permission rules).
@@ -29,7 +30,11 @@ export class RadioAudio {
   async init({ mic = '', speaker = '' } = {}) {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.ctx = ctx;
-    await ctx.resume();
+    ctx.onstatechange = () => this.onSpeakerState && this.onSpeakerState();
+    // Not awaited: if the gesture has expired by now (e.g. login took a
+    // while) the browser keeps the context suspended and this promise pending
+    // until a later gesture, which would hang power-on.
+    ctx.resume().catch(() => {});
     if (speaker) await this.setSpeaker(speaker).catch(() => {});
 
     this.master = ctx.createGain();
@@ -138,6 +143,12 @@ export class RadioAudio {
   // AudioContext.setSinkId is Chromium-only so far.
   canSetSpeaker() { return typeof this.ctx?.setSinkId === 'function'; }
   setSpeaker(deviceId) { return this.ctx.setSinkId(deviceId); }
+
+  // Suspended by autoplay rules, or "interrupted" on iOS (e.g. a phone call).
+  // Nothing plays and the mic isn't processed until it runs again.
+  speakerBlocked() { return this.ctx.state !== 'running'; }
+  // Must be called from a user gesture.
+  resumeSpeaker() { return this.ctx.resume(); }
 
   setVolume(v) { this.master.gain.value = v; }
 

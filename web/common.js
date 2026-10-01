@@ -134,6 +134,18 @@ export function bindDevices(audio) {
     refresh();
   };
 
+  const showSpeakerWarn = () => ($('spk-warn').hidden = !audio.speakerBlocked());
+  audio.onSpeakerState = showSpeakerWarn;
+  $('spk-retry').onclick = () => audio.resumeSpeaker().catch(() => {});
+  // Any interaction is a gesture the browser accepts, so PTT or a knob turn
+  // also brings the sound back without hunting for the button.
+  for (const ev of ['pointerdown', 'keydown']) {
+    document.addEventListener(ev, () => {
+      if (audio.speakerBlocked()) audio.resumeSpeaker().catch(() => {});
+    }, true);
+  }
+  showSpeakerWarn();
+
   const fill = (sel, devices, current, noun) => {
     sel.innerHTML = '';
     sel.add(new Option('System default', ''));
