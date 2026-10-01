@@ -28,6 +28,8 @@
         </div>
         <div id="chname" class="lcd-name">—</div>
         <div id="status" class="lcd-status">READY</div>
+        <!-- #status ticks every second while transmitting; this only changes when the state does. -->
+        <span id="status-live" class="sr-only" role="status"></span>
       </div>
 
       <div class="leds">
@@ -39,17 +41,17 @@
         <button id="ch-down" aria-label="Channel down">◀</button>
         <span class="knob-label">CHANNEL</span>
         <button id="ch-up" aria-label="Channel up">▶</button>
-        <button id="scan" class="toggle">SCAN</button>
+        <button id="scan" class="toggle" aria-pressed="false">SCAN</button>
       </div>
 
-      <button id="ptt" class="ptt">PUSH TO TALK</button>
+      <button id="ptt" class="ptt" aria-pressed="false">PUSH TO TALK</button>
       <p class="hint center">Hold the button, or hold the space bar.</p>
 
       <div class="settings">
         <label>Volume <input id="volume" type="range" min="0" max="1.5" step="0.05" value="0.8"></label>
         <label>Microphone <select id="mic-sel"></select></label>
         <label>Mic sensitivity <input id="mic-sens" type="range" min="0" max="1" step="0.05" value="0.55">
-        <div id="mic-meter" class="meter"><div class="meter-fill"></div></div></label>
+        <div id="mic-meter" class="meter" role="meter" aria-label="Mic level" aria-valuemin="-80" aria-valuemax="0" aria-valuenow="-80"><div class="meter-fill"></div></div></label>
         <label id="spk-row">Speaker <select id="spk-sel"></select></label>
         <label class="check"><input id="latch" type="checkbox"> Tap to talk / tap to stop</label>
       </div>
@@ -59,7 +61,7 @@
 
     <footer class="footer">
       <span id="me"></span> · <span id="net">connecting…</span> ·
-      <span id="mic-warn" class="error" hidden><span id="mic-msg"></span> <button id="mic-retry" class="link-btn">Try again</button></span> <span id="spk-warn" class="error" hidden>Sound is blocked by the browser. <button id="spk-retry" class="link-btn">Turn on sound</button></span> <a href="#" id="logout">Log out</a>
+      <span role="status"><span id="mic-warn" class="error" hidden><span id="mic-msg"></span> <button id="mic-retry" class="link-btn">Try again</button></span> <span id="spk-warn" class="error" hidden>Sound is blocked by the browser. <button id="spk-retry" class="link-btn">Turn on sound</button></span></span> <a href="#" id="logout">Log out</a>
     </footer>
   </main>
 

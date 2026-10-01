@@ -109,6 +109,11 @@ export function bindDevices(audio) {
   audio.onMicLevel = ({ db, open }) => {
     level.style.width = pct(db);
     meter.classList.toggle('open', open);
+    const now = String(Math.round(Math.max(METER_MIN_DB, Math.min(0, db))));
+    if (meter.getAttribute('aria-valuenow') !== now) {
+      meter.setAttribute('aria-valuenow', now);
+      meter.setAttribute('aria-valuetext', `${now} dB, ${open ? 'loud enough to be heard' : 'below the gate'}`);
+    }
   };
 
   const showMicError = () => {

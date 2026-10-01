@@ -76,20 +76,23 @@ class GateProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs, outputs, params) {
-    const input = inputs[0], output = outputs[0];
-    if (!input || !input[0]) return true;
+    // Firefox passes no channels at all once the source is silent (e.g. a
+    // muted mic). Treat that as silence so the meter and gate still fall.
+    const input = inputs[0] || [], output = outputs[0];
+    const mono = input[0];
+    const n = mono ? mono.length : (output[0]?.length ?? 128);
     const open = Math.pow(10, params.threshold[0] / 20);
-    for (let i = 0; i < input[0].length; i++) {
-      const a = Math.abs(input[0][i]);
+    for (let i = 0; i < n; i++) {
+      const a = mono ? Math.abs(mono[i]) : 0;
       this.env += (a - this.env) * (a > this.env ? this.envAttack : this.envRelease);
       if (this.env > open) this.hold = this.holdLen;
       else if (this.hold > 0) this.hold--;
       const target = this.hold > 0 ? 1 : 0;
       this.gain += (target - this.gain) * (target ? this.gainOpen : this.gainClose);
-      for (let c = 0; c < output.length; c++) output[c][i] = (input[c] || input[0])[i] * this.gain;
+      for (let c = 0; c < output.length; c++) output[c][i] = mono ? (input[c] || mono)[i] * this.gain : 0;
     }
     // Level for the settings meter, on the same scale as the threshold.
-    this.sinceReport += input[0].length;
+    this.sinceReport += n;
     if (this.sinceReport >= this.reportLen) {
       this.sinceReport = 0;
       this.port.postMessage({ db: 20 * Math.log10(this.env + 1e-9), open: this.hold > 0 });

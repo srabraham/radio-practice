@@ -110,16 +110,21 @@ export class Transmitter {
     button.addEventListener('pointercancel', release);
     button.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    // The space bar anywhere, or Enter on the focused button. Both follow the
+    // latch setting, so tap to talk also works for people who can't hold a key.
     const typing = (e) => /INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== 'range' && e.target.type !== 'checkbox';
+    const pttKey = (e) => (e.code === 'Space' && !typing(e)) || (e.key === 'Enter' && e.target === button);
     window.addEventListener('keydown', (e) => {
-      if (e.code !== 'Space' || typing(e)) return;
+      if (!pttKey(e)) return;
       e.preventDefault();
-      if (!e.repeat) press();
+      if (e.repeat) return;
+      if (latched()) this.state === 'idle' ? press() : this.up();
+      else press();
     });
     window.addEventListener('keyup', (e) => {
-      if (e.code !== 'Space' || typing(e)) return;
+      if (!pttKey(e)) return;
       e.preventDefault();
-      this.up();
+      if (!latched()) this.up();
     });
     // A held button or space bar never sees its release once focus leaves, so
     // unkey then. A latched transmit is deliberate and keeps going in the

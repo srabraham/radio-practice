@@ -200,5 +200,6 @@ function renderTx() {
   };
   $('tx-status').textContent = labels[tx.state];
   $('ptt').classList.toggle('active', tx.keyed);
+  $('ptt').setAttribute('aria-pressed', tx.keyed);
   $('tx-ch').disabled = tx.keyed;
 }

@@ -26,6 +26,29 @@ Phones need HTTPS before the browser allows the mic (localhost is the only
 exception). To test on a phone, either deploy with `-tls-domain` or use a tunnel
 such as `cloudflared tunnel --url http://localhost:8555` or `tailscale serve`.
 
+## End-to-end tests
+
+Playwright tests in `e2e/` drive real browsers through the audio workflows:
+talking and listening on both channel modes, doubling, the repeater's permit
+chirp and busy bonk, TOT, scan, the instructor console, mic and speaker
+handling, and accessibility (axe scans plus keyboard and screen-reader checks).
+
+```sh
+cd e2e
+npm ci
+npx playwright install chromium firefox webkit
+npm test                                  # every browser and device
+npx playwright test --project=firefox     # one of them
+E2E_BRANDED=chrome,msedge npm test        # also the installed Chrome / Edge
+```
+
+Global setup builds the server once, and each Playwright worker runs its own
+copy on a free port, so tests never hear each other. Most tests replace `getUserMedia` with a synthetic tone so every
+browser gets the same mic, and check what was played by tapping the page's
+`AudioContext` output (`e2e/harness/page-audio.js`). `native-mic.spec.ts` uses
+each browser's own fake capture device instead. CI runs the suite on Linux,
+macOS and Windows.
+
 ## Deploy (AWS Lightsail or EC2)
 
 1. Create a small instance: Lightsail $5/mo, or EC2 t4g.small. Open ports 80 and 443.
@@ -137,6 +160,7 @@ Binary frames carry audio:
 | `web/ptt.js` | Transmit state machine (shared by the radio and the console) |
 | `web/radio.js`, `web/console.js` | The two UIs |
 | `cmd/radiobot` | Scripted radio for testing |
+| `e2e/` | Playwright browser tests |
 
 ## Known gaps and next steps
 

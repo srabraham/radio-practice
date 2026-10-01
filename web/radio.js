@@ -132,6 +132,7 @@ function render() {
   $('mode').textContent = digital ? 'DIG' : 'FM';
   $('scan-ind').hidden = !scanning;
   $('scan').classList.toggle('on', scanning);
+  $('scan').setAttribute('aria-pressed', scanning);
 
   const heard = audio.active().filter((s) => s.ch === dc);
 
@@ -149,9 +150,13 @@ function render() {
     case 'preempted': if (!heard.length) status = 'PREEMPTED'; break;
   }
   $('status').textContent = status;
+  // The talk timer would make a screen reader read the status every second.
+  const spoken = tx.state === 'tx' ? 'Transmitting' : status;
+  if ($('status-live').textContent !== spoken) $('status-live').textContent = spoken;
   $('led-tx').classList.toggle('on', tx.state === 'tx' || tx.state === 'waiting');
   $('led-rx').classList.toggle('on', heard.length > 0);
   $('ptt').classList.toggle('active', tx.keyed);
+  $('ptt').setAttribute('aria-pressed', tx.keyed);
   $('ch-up').disabled = $('ch-down').disabled = tx.keyed;
 }
 

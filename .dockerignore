@@ -5,3 +5,4 @@ README.md
 certs/
 .env
 docker-compose.yml
+e2e
