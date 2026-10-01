@@ -33,13 +33,17 @@ export class Link {
       }
       if (e.code === 4001) {
         await fetch('/api/logout', { method: 'POST' }).catch(() => {});
-        location.href = location.pathname + '?taken=1';
+        const q = new URLSearchParams(location.search);
+        q.set('taken', '1');
+        location.search = q;
         return;
       }
       this.onStatus('offline');
       const me = await fetch('/api/me').catch(() => null);
+      // Logged out, e.g. by a server restart: the URL and saved callsign log
+      // straight back in.
       if (me && me.status === 401) {
-        location.href = '/';
+        location.reload();
         return;
       }
       setTimeout(() => this.connect(), this.backoff);

@@ -12,6 +12,7 @@ RADIO_PASSWORD=practice RADIO_INSTRUCTOR_PASSWORD=control go run . -dev
 
 - Radios: http://localhost:8555. Log in with any callsign and the participant password.
 - Console: the same URL; logging in with the instructor password opens the console instead of a radio.
+- The password rides in the URL (`/?p=practice`), so the address bar is a link to share. The browser remembers the callsign, so a link plus a saved callsign logs straight in.
 - `-dev` serves `web/` from disk, so front-end edits only need a page refresh.
 - If you leave the password env vars unset, random passwords are generated and printed to the log.
 

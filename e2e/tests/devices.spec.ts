@@ -69,7 +69,6 @@ test.describe('microphone', () => {
     await expect(picker).toHaveValue('fake-mic-2');
 
     await r.page.reload();
-    await r.page.getByRole('button', { name: 'Power on' }).click();
     await r.waitOnline();
     const asked = await r.page.evaluate(() => (window as any).__mic.constraints);
     expect(asked.audio.deviceId).toEqual({ exact: 'fake-mic-2' });

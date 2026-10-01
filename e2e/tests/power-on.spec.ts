@@ -24,36 +24,70 @@ test.describe('power on', () => {
     expect(await page.evaluate(() => (window as any).__tap.contexts.length)).toBe(0);
   });
 
-  test('after a reload the session is kept, but sound waits for a click', async ({ openRadio }) => {
+  test('after a reload the radio comes straight back', async ({ openRadio }) => {
     const r = await openRadio({ ch: CH.tac1 });
     await r.page.reload();
-    // Browsers only allow audio and the mic after a gesture.
-    await expect(r.page.locator('#login')).toBeVisible();
-    await expect(r.page.getByLabel('Callsign')).toHaveValue(r.callsign);
-    await expect(r.page.locator('#pw-row')).toBeHidden();
-    expect(await r.page.evaluate(() => (window as any).__tap.contexts.length)).toBe(0);
-
-    await r.page.getByRole('button', { name: 'Power on' }).click();
     await r.waitOnline();
-    await expect.poll(() => r.audioState()).toBe('running');
+    await expect(r.page.locator('#login')).toBeHidden();
+    await expect(r.page).toHaveURL(/\/\?p=practice$/);
     // Knobs come back where they were.
     await expect(r.chname).toHaveText('tac 1');
+  });
+
+  test('the address bar shows the password after logging in', async ({ openRadio }) => {
+    const r = await openRadio();
+    await expect(r.page).toHaveURL(/\/\?p=practice$/);
   });
 
   test('a link with ?p= fills in the password', async ({ page }) => {
     await page.goto('/?p=practice');
     await expect(page.getByLabel('Password')).toHaveValue('practice');
+    await expect(page.getByLabel('Callsign')).toHaveValue('');
     const r = new Radio(page, 'LINKED');
     await page.getByLabel('Callsign').fill(r.callsign);
     await page.getByRole('button', { name: 'Power on' }).click();
     await r.waitOnline();
   });
 
+  test('a link with ?p= and a saved callsign goes right in', async ({ newUser }) => {
+    const page = await newUser();
+    await page.addInitScript(() => localStorage.setItem('rp.callsign', 'SAVED1'));
+    const r = new Radio(page, 'SAVED1');
+    await page.goto('/?p=practice');
+    await r.waitOnline();
+    await expect(page.locator('#me')).toHaveText('SAVED1');
+  });
+
+  test('a link with a wrong password and a saved callsign shows the card', async ({ newUser }) => {
+    const page = await newUser();
+    await page.addInitScript(() => localStorage.setItem('rp.callsign', 'SAVED2'));
+    await page.goto('/?p=nope');
+    await expect(page.locator('#login-error')).toHaveText('wrong password');
+    await expect(page.getByLabel('Callsign')).toHaveValue('SAVED2');
+    await expect(page.getByLabel('Password')).toHaveValue('nope');
+    await expect(page.locator('#radio')).toBeHidden();
+  });
+
+  test('logging out keeps the password but forgets the callsign', async ({ openRadio }) => {
+    const r = await openRadio();
+    await r.page.getByRole('link', { name: 'Log out' }).click();
+    await expect(r.page.getByRole('button', { name: 'Power on' })).toBeVisible();
+    await expect(r.page).toHaveURL(/\/\?p=practice$/);
+    await expect(r.page.getByLabel('Password')).toHaveValue('practice');
+    await expect(r.page.getByLabel('Callsign')).toHaveValue('');
+  });
+
+  test('an instructor link switches a participant session to the console', async ({ openRadio }) => {
+    const r = await openRadio();
+    await r.page.goto('/?p=' + INSTRUCTOR_PW);
+    await expect(r.page.locator('#console')).toBeVisible();
+    await expect(r.page.locator('#me')).toHaveText(r.callsign);
+  });
+
   test('a second tab takes the radio over; the first stops receiving', async ({ openRadio }) => {
     const first = await openRadio({ ch: CH.tac1 });
     const second = new Radio(await first.page.context().newPage(), first.callsign);
     await second.page.goto('/');
-    await second.page.getByRole('button', { name: 'Power on' }).click();
     await second.waitOnline();
     await expect(first.page.locator('#net')).toContainText('opened in another tab');
 
@@ -70,7 +104,7 @@ test.describe('power on', () => {
     await page.getByLabel('Callsign').fill('CONTROL');
     await page.getByLabel('Password').fill(INSTRUCTOR_PW);
     await page.getByRole('button', { name: 'Power on' }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(new RegExp(`/\\?p=${INSTRUCTOR_PW}$`));
     await expect(page.locator('#console')).toBeVisible();
     await expect(page.locator('#login')).toBeHidden();
     await expect(page.locator('#me')).toHaveText('CONTROL');

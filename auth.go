@@ -192,7 +192,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 		SameSite: http.SameSiteStrictMode,
 	})
-	writeJSON(w, map[string]any{"callsign": s.Callsign, "role": s.Role})
+	writeJSON(w, a.whoami(s))
 }
 
 func (a *Auth) HandleMe(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +201,17 @@ func (a *Auth) HandleMe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not logged in", http.StatusUnauthorized)
 		return
 	}
-	writeJSON(w, map[string]any{"callsign": s.Callsign, "role": s.Role})
+	writeJSON(w, a.whoami(s))
+}
+
+// whoami includes the role's password so the page can put it in a shareable
+// URL; the session already proves its holder knows it.
+func (a *Auth) whoami(s session) map[string]any {
+	pw := a.participantPW
+	if s.Role == RoleInstructor {
+		pw = a.instructorPW
+	}
+	return map[string]any{"callsign": s.Callsign, "role": s.Role, "password": pw}
 }
 
 func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
