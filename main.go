@@ -59,6 +59,8 @@ func main() {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
+	// The console used to live here; it's now the same page as the radio.
+	mux.Handle("/instructor.html", http.RedirectHandler("/", http.StatusMovedPermanently))
 	mux.HandleFunc("/api/login", auth.HandleLogin)
 	mux.HandleFunc("/api/me", auth.HandleMe)
 	mux.HandleFunc("/api/logout", auth.HandleLogout)

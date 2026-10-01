@@ -1,7 +1,7 @@
 import { RadioAudio } from './audio.js';
 import { Link } from './net.js';
 import { Transmitter } from './ptt.js';
-import { loginForm, logout, savedDevices, bindDevices } from './common.js';
+import { logout, savedDevices, bindDevices, mount } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 function el(tag, props = {}, ...kids) {
@@ -27,13 +27,7 @@ let state = { clients: [], channels: [] };
 let monitor = new Set();
 const callers = new Map();
 
-loginForm({
-  want: 'instructor',
-  onInstructor: start,
-  onParticipant: () => { location.href = '/'; },
-});
-
-async function start(who) {
+export async function openConsole(who) {
   audio = new RadioAudio({ clean: true });
   try {
     await audio.init(savedDevices());
@@ -41,8 +35,8 @@ async function start(who) {
     $('login-error').textContent = 'Microphone unavailable: ' + e.message;
     return;
   }
-  $('login').hidden = true;
-  $('console').hidden = false;
+  mount('console-view', 'console-page');
+  document.title = 'Radio Control';
   $('me').textContent = who.callsign;
   bindDevices(audio);
 

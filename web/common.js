@@ -2,23 +2,20 @@ import { me } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Drives the login card. On the radio page an existing session skips the
+// Drives the login card. The password decides the role: participants get the
+// radio, instructors the console. An existing participant session skips the
 // password but still needs a click, since browsers only allow audio after a
-// user gesture. An instructor session skips the card entirely: the radio page
-// redirects to the console, and the console opens straight away and falls
-// back to its "Turn on sound" banner if the browser blocks audio.
-export async function loginForm({ onInstructor, onParticipant, want }) {
+// user gesture. An instructor session skips the card entirely and falls back
+// to the console's "Turn on sound" banner if the browser blocks audio.
+export async function loginForm({ onInstructor, onParticipant }) {
   let who = await me();
-  // e.g. a participant session opening the console: ask for the instructor login.
-  if (who && want && who.role !== want) who = null;
   if (who && who.role === 'instructor') {
     onInstructor(who);
     return;
   }
   // Sessions don't survive a server restart, so remember the last login and
   // prefill it. The passwords are shared practice passwords, not real secrets.
-  const saveKey = 'rp.login.' + (want || 'participant');
-  const saved = loadLogin(saveKey);
+  const saved = loadLogin();
   if (saved) {
     $('callsign').value = saved.callsign;
     $('password').value = saved.password;
@@ -50,24 +47,31 @@ export async function loginForm({ onInstructor, onParticipant, want }) {
         return;
       }
       who = await r.json();
-      saveLogin(saveKey, { callsign: $('callsign').value, password: $('password').value });
+      saveLogin({ callsign: $('callsign').value, password: $('password').value });
     }
-    if (who.role === 'instructor' && onInstructor) onInstructor(who);
+    if (who.role === 'instructor') onInstructor(who);
     else onParticipant(who);
   });
 }
 
-function loadLogin(key) {
+// Swaps the login card for the radio or console view.
+export function mount(view, bodyClass) {
+  $('login').hidden = true;
+  $('login').after($(view).content.cloneNode(true));
+  document.body.className = bodyClass;
+}
+
+function loadLogin() {
   try {
-    return JSON.parse(localStorage.getItem(key));
+    return JSON.parse(localStorage.getItem('rp.login'));
   } catch {
     return null;
   }
 }
 
-function saveLogin(key, login) {
+function saveLogin(login) {
   try {
-    localStorage.setItem(key, JSON.stringify(login));
+    localStorage.setItem('rp.login', JSON.stringify(login));
   } catch {}
 }
 
@@ -214,8 +218,7 @@ function micErrorText(e) {
 
 export async function logout() {
   try {
-    localStorage.removeItem('rp.login.participant');
-    localStorage.removeItem('rp.login.instructor');
+    localStorage.removeItem('rp.login');
   } catch {}
   await fetch('/api/logout', { method: 'POST' });
   location.href = '/';

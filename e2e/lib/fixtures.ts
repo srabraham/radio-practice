@@ -171,10 +171,10 @@ export class Console extends User {
   get hearing() { return this.page.locator('#hearing'); }
 
   async open(password = INSTRUCTOR_PW) {
-    await this.page.goto('/instructor.html');
+    await this.page.goto('/');
     await this.page.getByLabel('Callsign').fill(this.callsign);
-    await this.page.getByLabel('Instructor password').fill(password);
-    await this.page.getByRole('button', { name: 'Open console' }).click();
+    await this.page.getByLabel('Password').fill(password);
+    await this.page.getByRole('button', { name: 'Power on' }).click();
     await expect(this.page.locator('#console')).toBeVisible();
     await expect(this.page.locator('#net')).toHaveText('online');
     await this.wire.waitFor('hello');

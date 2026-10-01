@@ -65,23 +65,32 @@ test.describe('power on', () => {
     expect(first.wire.audioReceivedSince(wireT0)).toHaveLength(0);
   });
 
-  test('an instructor login on the radio page goes straight into the console', async ({ page }) => {
+  test('an instructor login opens the console on the same page', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Callsign').fill('CONTROL');
     await page.getByLabel('Password').fill(INSTRUCTOR_PW);
     await page.getByRole('button', { name: 'Power on' }).click();
-    await expect(page).toHaveURL(/\/instructor\.html$/);
+    await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('#console')).toBeVisible();
     await expect(page.locator('#login')).toBeHidden();
     await expect(page.locator('#me')).toHaveText('CONTROL');
     await expect(page.locator('#net')).toHaveText('online');
+    // No navigation in between, so the login click still counts as the gesture.
+    await expect.poll(() => page.evaluate(() => (window as any).__tap.state())).toBe('running');
+    await expect(page.locator('#spk-warn')).toBeHidden();
   });
 
-  test('the instructor console needs the instructor password', async ({ page }) => {
+  test('an instructor session reopens the console without the login card', async ({ openConsole }) => {
+    const ctl = await openConsole();
+    await ctl.page.reload();
+    await expect(ctl.page.locator('#console')).toBeVisible();
+    await expect(ctl.page.locator('#login')).toBeHidden();
+    await expect(ctl.page.locator('#net')).toHaveText('online');
+  });
+
+  test('the old console URL redirects to the radio page', async ({ page }) => {
     await page.goto('/instructor.html');
-    await page.getByLabel('Instructor password').fill('practice');
-    await page.getByRole('button', { name: 'Open console' }).click();
-    // A participant login just bounces to the radio.
     await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('button', { name: 'Power on' })).toBeVisible();
   });
 });

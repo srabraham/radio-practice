@@ -68,12 +68,6 @@ for (const scheme of ['light', 'dark'] as const) {
       await expectNoAxeViolations(page);
     });
 
-    test('console login', async ({ page }) => {
-      await page.goto('/instructor.html');
-      await expect(page.getByRole('button', { name: 'Open console' })).toBeVisible();
-      await expectNoAxeViolations(page);
-    });
-
     test('console with radios on the air', async ({ page, openRadio }) => {
       await openConsole(page, `AXC${scheme}`);
       const a = await openRadio({ ch: CH.tac1 });

@@ -1,7 +1,7 @@
 import { RadioAudio } from './audio.js';
-import { Link, me } from './net.js';
+import { Link } from './net.js';
 import { Transmitter } from './ptt.js';
-import { loginForm, logout, savedDevices, bindDevices } from './common.js';
+import { logout, savedDevices, bindDevices, mount } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const SCAN_HANG_MS = 3000;
@@ -13,12 +13,7 @@ let scanning = localStorage.getItem('rp.scan') === '1';
 let landed = null; // while scanning: { ch, until } for the channel we stopped on
 const callers = new Map(); // "ch:sid" -> callsign (digital caller ID)
 
-loginForm({
-  onInstructor: () => { location.href = '/instructor.html'; },
-  onParticipant: powerOn,
-});
-
-async function powerOn(who) {
+export async function powerOn(who) {
   audio = new RadioAudio();
   try {
     await audio.init(savedDevices());
@@ -26,8 +21,7 @@ async function powerOn(who) {
     $('login-error').textContent = 'Microphone unavailable: ' + e.message;
     return;
   }
-  $('login').hidden = true;
-  $('radio').hidden = false;
+  mount('radio-view', 'radio-page');
   $('me').textContent = who.callsign;
   bindDevices(audio);
   navigator.wakeLock?.request('screen').catch(() => {});

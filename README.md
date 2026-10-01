@@ -11,7 +11,7 @@ RADIO_PASSWORD=practice RADIO_INSTRUCTOR_PASSWORD=control go run . -dev
 ```
 
 - Radios: http://localhost:8555. Log in with any callsign and the participant password.
-- Console: http://localhost:8555/instructor.html. Use the instructor password.
+- Console: the same URL; logging in with the instructor password opens the console instead of a radio.
 - `-dev` serves `web/` from disk, so front-end edits only need a page refresh.
 - If you leave the password env vars unset, random passwords are generated and printed to the log.
 
@@ -157,7 +157,7 @@ Binary frames carry audio:
 | `Dockerfile`, `docker-compose.yml` | Container build and public deploy |
 | `web/audio.js` | Capture, playout, and all radio sound effects |
 | `web/ptt.js` | Transmit state machine (shared by the radio and the console) |
-| `web/radio.js`, `web/console.js` | The two UIs |
+| `web/app.js`, `web/radio.js`, `web/console.js` | Entry point and the two UIs, both on `index.html` |
 | `cmd/radiobot` | Scripted radio for testing |
 | `e2e/` | Playwright browser tests |
 
