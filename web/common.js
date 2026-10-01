@@ -2,14 +2,16 @@ import { me } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Drives the login card. An existing session skips the password, but we still
-// need a click: browsers only allow audio and mic after a user gesture.
+// Drives the login card. On the radio page an existing session skips the
+// password but still needs a click, since browsers only allow audio after a
+// user gesture. An instructor session skips the card entirely: the radio page
+// redirects to the console, and the console opens straight away and falls
+// back to its "Turn on sound" banner if the browser blocks audio.
 export async function loginForm({ onInstructor, onParticipant, want }) {
   let who = await me();
   // e.g. a participant session opening the console: ask for the instructor login.
   if (who && want && who.role !== want) who = null;
-  // On the radio page an instructor session just redirects to the console.
-  if (who && who.role === 'instructor' && !want) {
+  if (who && who.role === 'instructor') {
     onInstructor(who);
     return;
   }

@@ -1,4 +1,4 @@
-import { test, expect, CH, Radio } from '../lib/fixtures';
+import { test, expect, CH, Radio, INSTRUCTOR_PW } from '../lib/fixtures';
 import { HZ, expectTone, now } from '../lib/audio';
 
 test.describe('power on', () => {
@@ -63,6 +63,18 @@ test.describe('power on', () => {
     await tx.talk(1200);
     await expectTone(second.page, HZ.voice, { since: t0 });
     expect(first.wire.audioReceivedSince(wireT0)).toHaveLength(0);
+  });
+
+  test('an instructor login on the radio page goes straight into the console', async ({ page }) => {
+    await page.goto('/');
+    await page.getByLabel('Callsign').fill('CONTROL');
+    await page.getByLabel('Password').fill(INSTRUCTOR_PW);
+    await page.getByRole('button', { name: 'Power on' }).click();
+    await expect(page).toHaveURL(/\/instructor\.html$/);
+    await expect(page.locator('#console')).toBeVisible();
+    await expect(page.locator('#login')).toBeHidden();
+    await expect(page.locator('#me')).toHaveText('CONTROL');
+    await expect(page.locator('#net')).toHaveText('online');
   });
 
   test('the instructor console needs the instructor password', async ({ page }) => {
