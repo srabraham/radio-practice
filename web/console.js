@@ -138,7 +138,7 @@ function buildChannels() {
   if (channels.some((c) => c.mode === 'digital-repeater')) {
     sel.add(new Option('ALL REPEATERS (Voice of God)', 'vog'));
   }
-  if (prev) sel.value = prev;
+  sel.value = prev || Math.max(0, channels.findIndex((c) => c.default));
 }
 
 function renderChannels() {
