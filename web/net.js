@@ -22,8 +22,8 @@ export class Link {
         return;
       }
       const b = new Uint8Array(e.data);
-      // [ch u8][sid u16][quality u8][seq u16][payload]
-      this.onAudio(b[0], (b[1] << 8) | b[2], b[3] / 255, b.subarray(6));
+      // [ch u8][sid u16][seq u16][payload]
+      this.onAudio(b[0], (b[1] << 8) | b[2], b.subarray(5));
     };
     ws.onclose = async (e) => {
       // Reconnecting would just take the radio back from the other page.

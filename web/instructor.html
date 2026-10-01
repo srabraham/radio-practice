@@ -28,19 +28,6 @@
     </header>
 
     <div class="console-grid">
-      <section class="panel map-panel">
-        <div class="toolbar">
-          <div class="seg">
-            <button id="tool-move" class="on">Move radios</button>
-            <button id="tool-zone">Dead zones</button>
-          </div>
-          <label>Zone radius <input id="zone-r" type="range" min="100" max="800" step="50" value="300"> <span id="zone-r-v">300 m</span></label>
-          <label>Loss <input id="zone-loss" type="range" min="0.3" max="1" step="0.05" value="0.85"> <span id="zone-loss-v">85%</span></label>
-        </div>
-        <canvas id="map"></canvas>
-        <p class="hint">Drag radios to move them. In dead-zone mode, click to add a zone and click a zone to remove it. Dashed circles show the reach of FM transmitters.</p>
-      </section>
-
       <section class="panel">
         <h2>Transmit as Control</h2>
         <div class="row">
@@ -57,7 +44,9 @@
 
         <h2>Channels</h2>
         <div id="channels"></div>
+      </section>
 
+      <section class="panel">
         <h2>Send a prompt</h2>
         <div class="row">
           <label>To <select id="prompt-to"></select></label>
@@ -68,7 +57,7 @@
 
         <h2>Radios</h2>
         <table class="roster">
-          <thead><tr><th>Callsign</th><th>Channel</th><th>Location</th><th></th></tr></thead>
+          <thead><tr><th>Callsign</th><th>Channel</th><th></th></tr></thead>
           <tbody id="roster"></tbody>
         </table>
       </section>

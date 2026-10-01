@@ -41,7 +41,7 @@ func main() {
 	participantPW := envOrRandom("RADIO_PASSWORD")
 	instructorPW := envOrRandom("RADIO_INSTRUCTOR_PASSWORD")
 
-	hub := NewHub(defaultChannels(), defaultLandmarks(), *tot)
+	hub := NewHub(defaultChannels(), *tot)
 	go hub.RunStateBroadcast(200*time.Millisecond, nil)
 	auth := NewAuth(participantPW, instructorPW, hub.InUse)
 

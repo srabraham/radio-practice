@@ -173,12 +173,3 @@ export async function logout() {
   await fetch('/api/logout', { method: 'POST' });
   location.href = '/';
 }
-
-export function nearestLandmark(landmarks, pos) {
-  let best = landmarks[0], bestD = Infinity;
-  for (const l of landmarks) {
-    const d = Math.hypot(l.pos.x - pos.x, l.pos.y - pos.y);
-    if (d < bestD) { best = l; bestD = d; }
-  }
-  return best;
-}

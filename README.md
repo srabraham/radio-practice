@@ -18,8 +18,8 @@ RADIO_PASSWORD=practice RADIO_INSTRUCTOR_PASSWORD=control go run . -dev
 Test without a microphone, or with several people, using scripted radios:
 
 ```sh
-go run ./cmd/radiobot -password practice -callsign BOT1 -ch 5 -loc 3-esp
-go run ./cmd/radiobot -password practice -callsign BOT2 -ch 5 -loc 730-g -pitch 400   # doubles with BOT1
+go run ./cmd/radiobot -password practice -callsign BOT1 -ch 5
+go run ./cmd/radiobot -password practice -callsign BOT2 -ch 5 -pitch 400   # doubles with BOT1
 ```
 
 Phones need HTTPS before the browser allows the mic (localhost is the only
@@ -61,11 +61,10 @@ under systemd.
 │ mic → 300–3000 Hz → worklet │ ─ JSON ctrl ─▶│ Hub (one mutex)              │
 │   → 8 kHz μ-law 20 ms frames│ ─ binary ────▶│  • channels: floor lock /    │
 │                             │               │    simplex txers, TOT timers │
-│ per-stream jitter buffer →  │◀─ binary ──── │  • radios: channel, scan,    │
-│   capture/doubling mix →    │   (+quality)  │    position                  │
-│   radio EQ + hiss + tones   │◀─ JSON ────── │  • link quality per rx       │
-└─────────────────────────────┘               │  • state → instructor 5×/s   │
-                                              └──────────────────────────────┘
+│ per-stream jitter buffer →  │◀─ binary ──── │  • radios: channel, scan     │
+│   doubling mix →            │               │  • state → instructor 5×/s   │
+│   radio EQ + hiss + tones   │◀─ JSON ────── │                              │
+└─────────────────────────────┘               └──────────────────────────────┘
 ```
 
 **Who decides what.** The server is the authority for everything that has to
@@ -74,22 +73,18 @@ be consistent between radios:
 - who is keyed on simplex
 - the time-out timer (TOT)
 - force-unkey
-- positions and dead zones
-- link quality from each transmitter to each receiver
 
-It sends each frame only to radios that would hear it, and tags the frame with
-that receiver's link quality. Everything that is just how it sounds happens in
-the receiving browser: hiss, the squelch tail, FM capture versus a garbled
-double, digital dropouts, and beeps.
+There is no range model: every radio hears every transmission on the channels
+it is listening to. The server sends each frame only to those radios.
+Everything that is just how it sounds happens in the receiving browser: hiss,
+the squelch tail, a garbled double when two people key on simplex, and beeps.
 
 **Channel modes.**
 
 | | Analog FM simplex (TAC 1/2, CAMP) | Digital repeater (DISPATCH, OPS, MEDICAL) |
 |---|---|---|
 | Floor | None. Anyone can key at any time. | The repeater grants one talker. Others get a "busy" bonk. |
-| Range | Radio to radio, about 2.2 km, reduced by dead zones. | Radio to repeater. If the repeater can't hear you, you get a "no repeater" tone. |
-| Weak signal | Rising hiss, then the squelch stays closed. | Clean until the cliff, then robotic dropouts. |
-| Two talkers | The stronger one captures the receiver. If they're similar strength, you hear a garbled mix and a heterodyne whine. | Can't happen. |
+| Two talkers | Everyone hears a garbled mix and a heterodyne whine. | Can't happen. |
 | Caller ID | No | Yes |
 | Keying | Instant | Wait for the talk-permit chirp. Speech before it is lost. |
 
@@ -102,14 +97,12 @@ hang time. PTT during the hang time talks back on that channel.
 
 **Instructor console.**
 - Hears every monitored channel cleanly, with caller ID.
-- Drags radios around the map; signal changes are live while dragging.
-- Adds or removes dead zones.
 - Force-unkeys a stuck mic.
 - Voice of God: transmits on every repeater channel at once. Anyone talking on
   a repeater is cut off and hears Control instead. Simplex channels are not
   affected.
 - Sends scenario prompts to everyone or one radio.
-- Transmits as Control, always at full strength.
+- Transmits as Control.
 
 **Why 8 kHz μ-law and not Opus.** μ-law needs no codec library and works in
 every browser, including older iOS Safari. Radio audio is band-limited to
@@ -120,34 +113,34 @@ bandwidth by about 3x if that ever matters.
 ### Wire protocol
 
 JSON text frames carry control messages. Client to server:
-- `key` (instructors may send `vog: true` for Voice of God), `unkey`, `tune`, `scan`, `pos`
-- instructor only: `monitor`, `move`, `zone_add`, `zone_del`, `force_unkey`, `prompt`
+- `key` (instructors may send `vog: true` for Voice of God), `unkey`, `tune`, `scan`
+- instructor only: `monitor`, `force_unkey`, `prompt`
 
 Server to client:
-- `hello`, `tx_ok`, `tx_deny`, `tx_end`, `rx_start`, `rx_end`, `pos`, `prompt`
+- `hello`, `tx_ok`, `tx_deny`, `tx_end`, `rx_start`, `rx_end`, `prompt`
 - instructor only: `state`
 
 Binary frames carry audio:
 - up: `[seq u16][160 B μ-law]`
-- down: `[ch u8][sid u16][quality u8][seq u16][160 B μ-law]`
+- down: `[ch u8][sid u16][seq u16][160 B μ-law]`
 
 ## Files
 
 | | |
 |---|---|
 | `hub.go` | Channel, floor and TOT logic, fan-out, instructor commands |
-| `world.go` | Map, landmarks, default channels, link-quality model |
+| `channels.go` | Channel modes and the default channel plan |
 | `auth.go` | Shared-password login, signed session cookie |
 | `main.go` | HTTP, WebSocket, and autocert TLS |
 | `Dockerfile`, `docker-compose.yml` | Container build and public deploy |
 | `web/audio.js` | Capture, playout, and all radio sound effects |
 | `web/ptt.js` | Transmit state machine (shared by the radio and the console) |
-| `web/radio.js`, `web/console.js`, `web/map.js` | The two UIs |
+| `web/radio.js`, `web/console.js` | The two UIs |
 | `cmd/radiobot` | Scripted radio for testing |
 
 ## Known gaps and next steps
 
-- Channels, landmarks and the TOT are hard-coded in `world.go`. Move them to a config file.
+- Channels and the TOT are hard-coded in `channels.go`. Move them to a config file.
 - iOS Safari routes audio to the earpiece while the mic is open. Releasing the mic between transmissions may help.
 - Future work: recording and playback, speech-to-text scoring, and bot traffic (TTS) for solo practice.
 - Per-IP rate limiting on login. There is currently a fixed delay after a wrong password and a global cap of 1,000 failures per hour. Past the cap, all new logins are refused until it refills, but existing sessions keep working.

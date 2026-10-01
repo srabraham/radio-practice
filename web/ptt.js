@@ -56,7 +56,7 @@ export class Transmitter {
       case 'tx_deny':
         if (this.state !== 'waiting') return;
         this.stop();
-        m.reason === 'no_repeater' ? this.audio.toneNoRepeater() : this.audio.toneBusy();
+        this.audio.toneBusy();
         this.state = 'denied';
         this.reason = m.reason;
         break;

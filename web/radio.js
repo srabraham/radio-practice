@@ -1,18 +1,15 @@
 import { RadioAudio } from './audio.js';
 import { Link, me } from './net.js';
 import { Transmitter } from './ptt.js';
-import { nearestLandmark, loginForm, logout, savedDevices, bindDevices } from './common.js';
+import { loginForm, logout, savedDevices, bindDevices } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const SCAN_HANG_MS = 3000;
 
 let audio, link, tx;
-let channels = [], landmarks = [];
+let channels = [];
 let ch = localStorage.getItem('rp.ch') === null ? null : Number(localStorage.getItem('rp.ch'));
 let scanning = localStorage.getItem('rp.scan') === '1';
-// '' means Control moved the radio off any landmark.
-let loc = localStorage.getItem('rp.loc') ?? 'center-camp';
-let pos = null;
 let landed = null; // while scanning: { ch, until } for the channel we stopped on
 const callers = new Map(); // "ch:sid" -> callsign (digital caller ID)
 
@@ -50,7 +47,6 @@ function onMessage(m) {
   switch (m.t) {
     case 'hello':
       channels = m.channels;
-      landmarks = m.landmarks;
       tx.tot = m.tot;
       if (!Number.isInteger(ch) || ch < 0 || ch >= channels.length) {
         ch = Math.max(0, channels.findIndex((c) => c.default));
@@ -58,17 +54,6 @@ function onMessage(m) {
       // The server starts every connection fresh; restore our knobs.
       link.send({ t: 'tune', ch });
       link.send({ t: 'scan', on: scanning, list: channels.map((c) => c.id) });
-      // Except position after Control moved us: the server remembers that
-      // for this login, and a landmark can't express it anyway.
-      if (landmarks.some((l) => l.id === loc)) {
-        link.send({ t: 'pos', loc });
-        pos = landmarks.find((l) => l.id === loc).pos;
-      } else {
-        loc = m.loc;
-        pos = m.pos;
-        localStorage.setItem('rp.loc', loc);
-      }
-      fillLocations();
       break;
     case 'rx_start':
       if (m.from) callers.set(m.ch + ':' + m.sid, m.from);
@@ -76,12 +61,6 @@ function onMessage(m) {
     case 'rx_end':
       audio.end(m.ch, m.sid);
       callers.delete(m.ch + ':' + m.sid);
-      break;
-    case 'pos':
-      pos = m.pos;
-      loc = m.loc || '';
-      localStorage.setItem('rp.loc', loc);
-      fillLocations();
       break;
     case 'prompt':
       showPrompt(m);
@@ -92,7 +71,7 @@ function onMessage(m) {
   render();
 }
 
-function onAudio(c, sid, q, payload) {
+function onAudio(c, sid, payload) {
   if (tx.keyed) return;
   const now = performance.now();
   if (!scanning) {
@@ -103,7 +82,7 @@ function onAudio(c, sid, q, payload) {
     if (landed && landed.ch !== c && now < landed.until) return;
     landed = { ch: c, until: now + SCAN_HANG_MS };
   }
-  audio.frame(c, sid, q, payload, channels[c].mode);
+  audio.frame(c, sid, payload, channels[c].mode);
 }
 
 // Keying during scan hang time talks back on the channel we stopped on.
@@ -140,25 +119,7 @@ function bindControls() {
     render();
   };
   $('volume').oninput = (e) => audio.setVolume(Number(e.target.value));
-  $('loc').onchange = (e) => {
-    if (!e.target.value) return;
-    loc = e.target.value;
-    localStorage.setItem('rp.loc', loc);
-    pos = landmarks.find((l) => l.id === loc)?.pos;
-    link.send({ t: 'pos', loc });
-  };
   $('logout').onclick = (e) => { e.preventDefault(); logout(); };
-}
-
-function fillLocations() {
-  const sel = $('loc');
-  sel.innerHTML = '';
-  if (!loc && pos) {
-    const near = nearestLandmark(landmarks, pos);
-    sel.add(new Option(`Moved by Control (near ${near.name})`, ''));
-  }
-  for (const l of landmarks) sel.add(new Option(l.name, l.id));
-  sel.value = loc;
 }
 
 function render() {
@@ -173,8 +134,6 @@ function render() {
   $('scan').classList.toggle('on', scanning);
 
   const heard = audio.active().filter((s) => s.ch === dc);
-  const q = Math.max(0, ...heard.map((s) => s.q));
-  document.querySelectorAll('#bars i').forEach((el, i) => el.classList.toggle('on', heard.length && q > i * 0.2));
 
   const isLanded = landed && performance.now() < landed.until;
   let status = scanning && !isLanded ? 'SCANNING' : 'READY';
@@ -185,7 +144,7 @@ function render() {
   switch (tx.state) {
     case 'waiting': status = 'TX…'; break;
     case 'tx': status = 'TX ' + fmtSecs((performance.now() - tx.startedAt) / 1000); break;
-    case 'denied': status = tx.reason === 'no_repeater' ? 'NO REPEATER' : 'CHANNEL BUSY'; break;
+    case 'denied': status = 'CHANNEL BUSY'; break;
     case 'alarm': status = tx.reason === 'forced' ? 'CUT BY CONTROL' : 'TIME-OUT'; break;
     case 'preempted': if (!heard.length) status = 'PREEMPTED'; break;
   }

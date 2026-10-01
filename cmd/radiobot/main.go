@@ -24,7 +24,6 @@ func main() {
 	callsign := flag.String("callsign", "BOT", "callsign")
 	password := flag.String("password", "", "participant password")
 	ch := flag.Int("ch", 0, "channel index (0-based)")
-	loc := flag.String("loc", "center-camp", "landmark id")
 	every := flag.Duration("every", 8*time.Second, "time between transmissions")
 	length := flag.Duration("len", 3*time.Second, "transmission length")
 	pitch := flag.Float64("pitch", 700, "tone frequency in Hz")
@@ -71,7 +70,6 @@ func main() {
 	}()
 
 	send(map[string]any{"t": "tune", "ch": *ch})
-	send(map[string]any{"t": "pos", "loc": *loc})
 
 	var seq uint16
 	var phase float64

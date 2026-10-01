@@ -48,8 +48,6 @@ type Client struct {
 	scanning bool
 	scanList map[int]bool
 	monitor  map[int]bool // instructors only
-	pos      Pos
-	loc      string
 	tx       *transmission
 }
 
@@ -63,11 +61,6 @@ type transmission struct {
 	audioAt time.Time
 }
 
-type placement struct {
-	pos Pos
-	loc string
-}
-
 type channel struct {
 	ChannelConfig
 	id     int
@@ -78,28 +71,20 @@ type channel struct {
 type Hub struct {
 	mu        sync.Mutex
 	channels  []*channel
-	landmarks []Landmark
 	clients   map[uint16]*Client
 	byCall    map[string]*Client
-	// Where each disconnected login's radio was, so a phone that drops its
-	// socket when the screen sleeps comes back where Control put it.
-	placements map[string]placement
-	zones      []Zone
-	nextZone   int
-	nextID     uint16
-	tot        time.Duration
-	rptrDelay  time.Duration
-	dirty      bool
+	nextID    uint16
+	tot       time.Duration
+	rptrDelay time.Duration
+	dirty     bool
 }
 
-func NewHub(chans []ChannelConfig, landmarks []Landmark, tot time.Duration) *Hub {
+func NewHub(chans []ChannelConfig, tot time.Duration) *Hub {
 	h := &Hub{
-		landmarks:  landmarks,
-		clients:    map[uint16]*Client{},
-		byCall:     map[string]*Client{},
-		placements: map[string]placement{},
-		tot:        tot,
-		rptrDelay:  1000 * time.Millisecond,
+		clients:   map[uint16]*Client{},
+		byCall:    map[string]*Client{},
+		tot:       tot,
+		rptrDelay: 1000 * time.Millisecond,
 	}
 	for i, cfg := range chans {
 		h.channels = append(h.channels, &channel{ChannelConfig: cfg, id: i, txers: map[*Client]bool{}})
@@ -139,13 +124,6 @@ func (h *Hub) Join(callsign, sid string, role Role, send chan outMsg, kick func(
 		scanList: map[int]bool{},
 		monitor:  map[int]bool{},
 	}
-	if p, ok := h.placements[sid]; ok {
-		c.pos, c.loc = p.pos, p.loc
-		delete(h.placements, sid)
-	} else {
-		c.loc = "center-camp"
-		c.pos = h.landmark(c.loc).Pos
-	}
 	if role == RoleInstructor {
 		for _, ch := range h.channels {
 			c.monitor[ch.id] = true
@@ -155,13 +133,10 @@ func (h *Hub) Join(callsign, sid string, role Role, send chan outMsg, kick func(
 	h.byCall[callsign] = c
 
 	h.sendJSON(c, map[string]any{
-		"t":         "hello",
-		"you":       map[string]any{"id": c.ID, "callsign": c.Callsign, "role": c.Role},
-		"channels":  h.channelInfo(),
-		"landmarks": h.landmarks,
-		"tot":       h.tot.Seconds(),
-		"loc":       c.loc,
-		"pos":       c.pos,
+		"t":        "hello",
+		"you":      map[string]any{"id": c.ID, "callsign": c.Callsign, "role": c.Role},
+		"channels": h.channelInfo(),
+		"tot":      h.tot.Seconds(),
 	})
 	h.sendOngoingLocked(c)
 	if role == RoleInstructor {
@@ -195,7 +170,6 @@ func (h *Hub) connectedLocked(c *Client) bool { return h.clients[c.ID] == c }
 
 func (h *Hub) removeLocked(c *Client) {
 	h.endTxLocked(c, "")
-	h.placements[c.sid] = placement{pos: c.pos, loc: c.loc}
 	delete(h.clients, c.ID)
 	if h.byCall[c.Callsign] == c {
 		delete(h.byCall, c.Callsign)
@@ -204,19 +178,14 @@ func (h *Hub) removeLocked(c *Client) {
 }
 
 type inMsg struct {
-	T    string  `json:"t"`
-	Ch   int     `json:"ch"`
-	On   bool    `json:"on"`
-	List []int   `json:"list"`
-	Loc  string  `json:"loc"`
-	ID   uint16  `json:"id"`
-	X    float64 `json:"x"`
-	Y    float64 `json:"y"`
-	R    float64 `json:"r"`
-	Loss float64 `json:"loss"`
-	Text string  `json:"text"`
-	To   uint16  `json:"to"`
-	Vog  bool    `json:"vog"`
+	T    string `json:"t"`
+	Ch   int    `json:"ch"`
+	On   bool   `json:"on"`
+	List []int  `json:"list"`
+	ID   uint16 `json:"id"`
+	Text string `json:"text"`
+	To   uint16 `json:"to"`
+	Vog  bool   `json:"vog"`
 }
 
 func (h *Hub) HandleJSON(c *Client, data []byte) {
@@ -257,11 +226,6 @@ func (h *Hub) HandleJSON(c *Client, data []byte) {
 		}
 		h.sendOngoingLocked(c)
 		h.dirty = true
-	case "pos":
-		if lm := h.landmark(m.Loc); lm != nil {
-			c.loc, c.pos = lm.ID, lm.Pos
-			h.dirty = true
-		}
 	}
 
 	if c.Role != RoleInstructor {
@@ -276,26 +240,6 @@ func (h *Hub) HandleJSON(c *Client, data []byte) {
 			}
 		}
 		h.sendOngoingLocked(c)
-	case "move":
-		if t := h.clients[m.ID]; t != nil {
-			t.pos, t.loc = Pos{X: m.X, Y: m.Y}, ""
-			h.sendJSON(t, map[string]any{"t": "pos", "pos": t.pos, "loc": t.loc})
-			h.dirty = true
-		}
-	case "zone_add":
-		if m.R > 0 && m.Loss >= 0 && m.Loss <= 1 {
-			h.nextZone++
-			h.zones = append(h.zones, Zone{ID: h.nextZone, Center: Pos{X: m.X, Y: m.Y}, Radius: m.R, Loss: m.Loss})
-			h.dirty = true
-		}
-	case "zone_del":
-		for i, z := range h.zones {
-			if z.ID == int(m.ID) {
-				h.zones = append(h.zones[:i], h.zones[i+1:]...)
-				h.dirty = true
-				break
-			}
-		}
 	case "force_unkey":
 		if t := h.clients[m.ID]; t != nil {
 			h.endTxLocked(t, "forced")
@@ -319,10 +263,6 @@ func (h *Hub) keyLocked(c *Client, chID int) {
 	case ModeRepeater:
 		if ch.holder != nil {
 			h.sendJSON(c, map[string]any{"t": "tx_deny", "ch": chID, "reason": "busy"})
-			return
-		}
-		if h.uplinkLocked(c, ch) < squelchThreshold {
-			h.sendJSON(c, map[string]any{"t": "tx_deny", "ch": chID, "reason": "no_repeater"})
 			return
 		}
 		ch.holder = c
@@ -427,8 +367,8 @@ func (h *Hub) endTxLocked(c *Client, reason string) {
 }
 
 // Audio fans one encoded frame from a transmitting client out to every radio
-// that would hear it. Incoming layout: [seq u16][payload]. Outgoing layout:
-// [ch u8][sid u16][quality u8][seq u16][payload].
+// listening on its channel. Incoming layout: [seq u16][payload]. Outgoing
+// layout: [ch u8][sid u16][seq u16][payload].
 func (h *Hub) Audio(c *Client, frame []byte) {
 	if len(frame) < 3 || len(frame) > 2+960 {
 		return
@@ -440,29 +380,19 @@ func (h *Hub) Audio(c *Client, frame []byte) {
 	if tx == nil || !h.connectedLocked(c) || time.Now().Before(tx.audioAt) {
 		return
 	}
-	uplinks := make([]float64, len(tx.chs))
-	for i, id := range tx.chs {
-		uplinks[i] = h.uplinkLocked(c, h.channels[id])
-	}
 	for _, r := range h.clients {
 		// Radios are half-duplex: while transmitting you hear nothing.
 		if r == c || r.tx != nil {
 			continue
 		}
-		for i, id := range tx.chs {
+		for _, id := range tx.chs {
 			if !h.subscribedLocked(r, id) {
 				continue
 			}
-			ch := h.channels[id]
-			q := h.qualityLocked(c, r, ch, uplinks[i])
-			if q < squelchThreshold {
-				continue
-			}
-			out := make([]byte, 4+len(frame))
-			out[0] = byte(ch.id)
+			out := make([]byte, 3+len(frame))
+			out[0] = byte(id)
 			binary.BigEndian.PutUint16(out[1:3], c.ID)
-			out[3] = byte(q * 255)
-			copy(out[4:], frame)
+			copy(out[3:], frame)
 			select {
 			case r.send <- outMsg{binary: true, data: out}:
 			default:
@@ -475,23 +405,6 @@ func (h *Hub) Audio(c *Client, frame []byte) {
 			}
 		}
 	}
-}
-
-func (h *Hub) uplinkLocked(c *Client, ch *channel) float64 {
-	if ch.Mode != ModeRepeater || c.Role == RoleInstructor {
-		return 1
-	}
-	return linkQuality(c.pos, *ch.Repeater, ch.RepeaterRange, h.zones)
-}
-
-func (h *Hub) qualityLocked(tx, rx *Client, ch *channel, uplink float64) float64 {
-	if rx.Role == RoleInstructor || tx.Role == RoleInstructor {
-		return 1
-	}
-	if ch.Mode == ModeRepeater {
-		return min(uplink, linkQuality(*ch.Repeater, rx.pos, ch.RepeaterRange, h.zones))
-	}
-	return linkQuality(tx.pos, rx.pos, handheldRange, h.zones)
 }
 
 func (h *Hub) subscribedLocked(r *Client, chID int) bool {
@@ -542,22 +455,11 @@ func (h *Hub) sendJSON(c *Client, v any) {
 
 func (h *Hub) validChannel(id int) bool { return id >= 0 && id < len(h.channels) }
 
-func (h *Hub) landmark(id string) *Landmark {
-	for i := range h.landmarks {
-		if h.landmarks[i].ID == id {
-			return &h.landmarks[i]
-		}
-	}
-	return nil
-}
-
 func (h *Hub) channelInfo() []map[string]any {
 	var out []map[string]any
 	for _, ch := range h.channels {
 		out = append(out, map[string]any{
-			"id": ch.id, "name": ch.Name, "mode": ch.Mode,
-			"repeater": ch.Repeater, "repeaterRange": ch.RepeaterRange,
-			"default": ch.Default,
+			"id": ch.id, "name": ch.Name, "mode": ch.Mode, "default": ch.Default,
 		})
 	}
 	return out
@@ -568,7 +470,7 @@ func (h *Hub) stateLocked() map[string]any {
 	for _, c := range h.clients {
 		m := map[string]any{
 			"id": c.ID, "callsign": c.Callsign, "role": c.Role, "channel": c.channel,
-			"scanning": c.scanning, "pos": c.pos, "loc": c.loc,
+			"scanning": c.scanning,
 		}
 		if c.tx != nil {
 			m["tx"] = map[string]any{"ch": c.tx.chs[0], "vog": c.tx.vog, "since": c.tx.start.UnixMilli()}
@@ -586,17 +488,10 @@ func (h *Hub) stateLocked() map[string]any {
 		}
 		chans = append(chans, map[string]any{"id": ch.id, "txers": txers})
 	}
-	zones := h.zones
-	if zones == nil {
-		zones = []Zone{} // JSON [] rather than null
-	}
-	return map[string]any{
-		"t": "state", "clients": clients, "channels": chans, "zones": zones,
-		"handheldRange": handheldRange,
-	}
+	return map[string]any{"t": "state", "clients": clients, "channels": chans}
 }
 
-// RunStateBroadcast pushes roster/map snapshots to instructor consoles,
+// RunStateBroadcast pushes roster snapshots to instructor consoles,
 // coalescing bursts of changes.
 func (h *Hub) RunStateBroadcast(interval time.Duration, stop <-chan struct{}) {
 	t := time.NewTicker(interval)

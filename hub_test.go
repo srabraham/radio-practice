@@ -23,12 +23,10 @@ type testRadio struct {
 
 // testChannels is fixed so tests don't depend on the event's channel plan.
 func testChannels() []ChannelConfig {
-	rptrA := clockPos(6, 1850)
-	rptrB := clockPos(3, 1850)
 	return []ChannelConfig{
-		{Name: "DISPATCH", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
-		{Name: "OPS", Mode: ModeRepeater, Repeater: &rptrB, RepeaterRange: 6000},
-		{Name: "MEDICAL", Mode: ModeRepeater, Repeater: &rptrA, RepeaterRange: 6000},
+		{Name: "DISPATCH", Mode: ModeRepeater},
+		{Name: "OPS", Mode: ModeRepeater},
+		{Name: "MEDICAL", Mode: ModeRepeater},
 		{Name: "TAC 1", Mode: ModeSimplex},
 		{Name: "TAC 2", Mode: ModeSimplex},
 	}
@@ -37,7 +35,7 @@ func testChannels() []ChannelConfig {
 // newTestHub turns off repeater key-up latency so tests can send audio right
 // after keying; TestRepeaterClipsStartOfTransmission covers it.
 func newTestHub(tot time.Duration) *Hub {
-	h := NewHub(testChannels(), defaultLandmarks(), tot)
+	h := NewHub(testChannels(), tot)
 	h.rptrDelay = 0
 	return h
 }
@@ -126,8 +124,8 @@ func TestRepeaterFloorControl(t *testing.T) {
 
 	h.Audio(a.Client, frame)
 	_, audio := drain(c)
-	if len(audio) != 1 || audio[0][0] != chDispatch || audio[0][3] == 0 {
-		t.Fatalf("CHARLIE should hear ALPHA's frame with a quality byte, got %v", audio)
+	if len(audio) != 1 || audio[0][0] != chDispatch {
+		t.Fatalf("CHARLIE should hear ALPHA's frame on DISPATCH, got %v", audio)
 	}
 
 	send(h, a, `{"t":"unkey"}`)
@@ -179,23 +177,6 @@ func TestSimplexIsNotClipped(t *testing.T) {
 	}
 }
 
-func TestRepeaterOutOfRangeIsDenied(t *testing.T) {
-	h := newTestHub(time.Minute)
-	a := join(h, "ALPHA", RoleParticipant)
-
-	send(h, a, `{"t":"zone_add","x":0,"y":0,"r":5000,"loss":1}`)
-	if len(h.zones) != 0 {
-		t.Fatalf("participants must not be able to add dead zones")
-	}
-
-	h.zones = []Zone{{ID: 1, Center: a.pos, Radius: 100, Loss: 1}}
-	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
-	ctrl, _ := drain(a)
-	if !hasMsg(ctrl, "tx_deny", "reason", "no_repeater") {
-		t.Fatalf("a radio inside a total dead zone can't reach the repeater, got %v", ctrl)
-	}
-}
-
 func TestSimplexAllowsDoublingAndIsHalfDuplex(t *testing.T) {
 	h := newTestHub(time.Minute)
 	a := join(h, "ALPHA", RoleParticipant)
@@ -226,30 +207,6 @@ func TestSimplexAllowsDoublingAndIsHalfDuplex(t *testing.T) {
 	}
 	if _, audio := drain(b); len(audio) != 0 {
 		t.Fatalf("BRAVO is transmitting and must not hear ALPHA")
-	}
-}
-
-func TestSimplexRange(t *testing.T) {
-	h := newTestHub(time.Minute)
-	a := join(h, "ALPHA", RoleParticipant)
-	b := join(h, "BRAVO", RoleParticipant)
-	c := join(h, "CHARLIE", RoleParticipant)
-	for _, r := range []*testRadio{a, b, c} {
-		send(h, r, `{"t":"tune","ch":%d}`, chTac1)
-	}
-	send(h, a, `{"t":"pos","loc":"3-k"}`)
-	send(h, b, `{"t":"pos","loc":"9-k"}`)   // 3.4 km away: out of range
-	send(h, c, `{"t":"pos","loc":"3-esp"}`) // ~1 km away: in range
-	drain(b)
-	drain(c)
-
-	send(h, a, `{"t":"key","ch":%d}`, chTac1)
-	h.Audio(a.Client, frame)
-	if _, audio := drain(b); len(audio) != 0 {
-		t.Fatalf("BRAVO across the city should hear nothing on simplex")
-	}
-	if _, audio := drain(c); len(audio) != 1 {
-		t.Fatalf("CHARLIE nearby should hear ALPHA")
 	}
 }
 
@@ -380,37 +337,11 @@ func TestScanReceivesOtherChannels(t *testing.T) {
 	}
 }
 
-func TestInstructorMoveZoneAndPrompt(t *testing.T) {
+func TestInstructorPrompt(t *testing.T) {
 	h := newTestHub(time.Minute)
 	a := join(h, "ALPHA", RoleParticipant)
 	b := join(h, "BRAVO", RoleParticipant)
 	ctl := join(h, "CONTROL", RoleInstructor)
-	for _, r := range []*testRadio{a, b} {
-		send(h, r, `{"t":"tune","ch":%d}`, chTac1)
-		drain(r)
-	}
-
-	send(h, ctl, `{"t":"move","id":%d,"x":3000,"y":0}`, b.ID)
-	ctrl, _ := drain(b)
-	if !hasMsg(ctrl, "pos", "", nil) {
-		t.Fatalf("BRAVO should be told it was moved, got %v", ctrl)
-	}
-	send(h, a, `{"t":"key","ch":%d}`, chTac1)
-	h.Audio(a.Client, frame)
-	if _, audio := drain(b); len(audio) != 0 {
-		t.Fatalf("BRAVO moved 3 km from Center Camp should be out of simplex range")
-	}
-	send(h, a, `{"t":"unkey"}`)
-
-	send(h, ctl, `{"t":"move","id":%d,"x":%f,"y":%f}`, b.ID, a.pos.X+200, a.pos.Y)
-	send(h, ctl, `{"t":"zone_add","x":%f,"y":%f,"r":50,"loss":1}`, a.pos.X+100, a.pos.Y)
-	drain(b)
-	send(h, a, `{"t":"key","ch":%d}`, chTac1)
-	h.Audio(a.Client, frame)
-	if _, audio := drain(b); len(audio) != 0 {
-		t.Fatalf("a total dead zone between the radios should block the path")
-	}
-	send(h, a, `{"t":"unkey"}`)
 
 	send(h, ctl, `{"t":"prompt","text":"Radio check","to":%d}`, a.ID)
 	ctrlA, _ := drain(a)
@@ -545,29 +476,5 @@ func TestSlowClientIsKickedToReconnect(t *testing.T) {
 	send(h, a, `{"t":"key","ch":%d}`, chDispatch)
 	if !slow.kicked || slow.kickReason != KickTooSlow {
 		t.Fatalf("a client with a full queue should be kicked as too slow, got kicked=%v reason=%v", slow.kicked, slow.kickReason)
-	}
-}
-
-func TestReconnectKeepsPlacementFromControl(t *testing.T) {
-	h := newTestHub(time.Minute)
-	a := join(h, "ALPHA", RoleParticipant)
-	ctl := join(h, "CONTROL", RoleInstructor)
-	send(h, ctl, `{"t":"move","id":%d,"x":1234,"y":-567}`, a.ID)
-
-	// A phone's socket drops when the screen sleeps, then it reconnects.
-	h.Leave(a.Client)
-	a = join(h, "ALPHA", RoleParticipant)
-	if a.pos != (Pos{X: 1234, Y: -567}) || a.loc != "" {
-		t.Fatalf("reconnect should keep Control's placement, got pos %v loc %q", a.pos, a.loc)
-	}
-
-	// A different login for the same callsign starts fresh.
-	h.Leave(a.Client)
-	b, err := joinSession(h, "ALPHA", "another-login", RoleParticipant)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.loc != "center-camp" {
-		t.Fatalf("a new login should start at Center Camp, got loc %q", b.loc)
 	}
 }

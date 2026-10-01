@@ -1,6 +1,5 @@
 // Mic capture, receive-side playback, and the "sounds like a radio" effects:
-// band-limiting, FM hiss and squelch tails, FM capture/doubling, digital
-// dropouts, and alert tones.
+// band-limiting, FM hiss and squelch tails, FM doubling, and alert tones.
 
 const RATE = 8000;
 const JITTER = 0.1; // seconds of buffering before playout
@@ -16,7 +15,7 @@ for (let i = 0; i < 256; i++) {
 
 export class RadioAudio {
   // clean: monitor mode for the instructor console. Every stream is mixed
-  // straight through with no capture effect, noise, or dropouts.
+  // straight through with no doubling effect or noise.
   constructor({ clean = false } = {}) {
     this.clean = clean;
     this.streams = new Map();
@@ -142,30 +141,20 @@ export class RadioAudio {
   startCapture() { this.capture?.port.postMessage({ active: true }); }
   stopCapture() { this.capture?.port.postMessage({ active: false }); }
 
-  // A received frame. q is link quality 0..1; mode is the channel's mode.
-  frame(ch, sid, q, payload, mode) {
+  // A received frame. mode is the channel's mode.
+  frame(ch, sid, payload, mode) {
     const key = ch + ':' + sid;
     let s = this.streams.get(key);
     if (!s) {
       const gain = this.ctx.createGain();
       gain.connect(this.rxBus);
-      s = { key, ch, sid, mode, gain, nextTime: 0, lastAt: 0, q, last: null };
+      s = { key, ch, sid, mode, gain, nextTime: 0, lastAt: 0 };
       this.streams.set(key, s);
     }
-    s.q = q;
     s.lastAt = performance.now();
 
-    let pcm = new Float32Array(payload.length);
+    const pcm = new Float32Array(payload.length);
     for (let i = 0; i < payload.length; i++) pcm[i] = ULAW[payload[i]];
-
-    if (mode === 'digital-repeater' && !this.clean && q < 0.35) {
-      // Near the digital cliff: frames get lost, and the vocoder repeats the
-      // last good one, which sounds robotic.
-      if (Math.random() < (0.35 - q) / 0.35 * 0.7) {
-        pcm = s.last ? s.last.map((x) => x * 0.6) : new Float32Array(pcm.length);
-      }
-    }
-    s.last = pcm;
 
     const buf = this.upsample(pcm);
     const src = this.ctx.createBufferSource();
@@ -187,7 +176,7 @@ export class RadioAudio {
     setTimeout(() => s.gain.disconnect(), (at - this.ctx.currentTime + 1) * 1000);
     if (s.mode === 'fm-simplex' && !this.clean && s.lastAt > 0) {
       const g = this.tail.gain;
-      g.setValueAtTime(0.25 + (1 - s.q) * 0.2, at);
+      g.setValueAtTime(0.25, at);
       g.setValueAtTime(0, at + 0.16);
     }
   }
@@ -212,20 +201,18 @@ export class RadioAudio {
     if (this.clean) {
       for (const s of this.streams.values()) s.gain.gain.setTargetAtTime(1, t, 0.01);
     } else {
-      const fm = active.filter((s) => s.mode === 'fm-simplex').sort((a, b) => b.q - a.q);
+      const fm = active.filter((s) => s.mode === 'fm-simplex');
       for (const s of active) if (s.mode !== 'fm-simplex') s.gain.gain.setTargetAtTime(1, t, 0.01);
       if (fm.length) {
-        // Open squelch: hiss rises as the signal weakens.
-        hiss = 0.02 + Math.pow(1 - fm[0].q, 2) * 0.5;
-        if (fm.length > 1 && fm[0].q - fm[1].q < 0.2) {
-          // Similar strengths: neither captures the receiver. Garbled mix.
+        hiss = 0.02; // open squelch
+        if (fm.length > 1) {
+          // Two talkers at once: neither captures the receiver. Garbled mix.
           fm.forEach((s) => s.gain.gain.setTargetAtTime(0.55, t, 0.01));
           het = 0.08;
           hiss += 0.15;
           this.het.frequency.setTargetAtTime(600 + Math.random() * 1800, t, 0.05);
         } else {
-          // FM capture effect: the stronger signal wins almost completely.
-          fm.forEach((s, i) => s.gain.gain.setTargetAtTime(i === 0 ? 1 : 0.06, t, 0.01));
+          fm[0].gain.gain.setTargetAtTime(1, t, 0.01);
         }
       }
     }
@@ -262,7 +249,6 @@ export class RadioAudio {
   }
 
   toneBusy() { this.beep(440, 0.15); this.beep(330, 0.3, { when: 0.16 }); }
-  toneNoRepeater() { for (let i = 0; i < 3; i++) this.beep(280, 0.1, { when: i * 0.16 }); }
   tonePermit() { this.beep(1400, 0.05, { type: 'sine', vol: 0.2 }); this.beep(1900, 0.06, { when: 0.06, type: 'sine', vol: 0.2 }); }
   toneTotWarn() { this.beep(1000, 0.08, { type: 'sine', vol: 0.15 }); }
 

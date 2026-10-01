@@ -1,8 +1,7 @@
 import { RadioAudio } from './audio.js';
 import { Link } from './net.js';
 import { Transmitter } from './ptt.js';
-import { MapView, CHANNEL_COLORS } from './map.js';
-import { loginForm, logout, nearestLandmark, savedDevices, bindDevices } from './common.js';
+import { loginForm, logout, savedDevices, bindDevices } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 function el(tag, props = {}, ...kids) {
@@ -11,22 +10,21 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 
+const CHANNEL_COLORS = ['#e4572e', '#2e86ab', '#a23b72', '#3bb273', '#f18f01', '#6c5ce7', '#17a398', '#c44536'];
+
 const PRESETS = [
   ['', '— choose a scenario —'],
   ['Radio check: call Control on DISPATCH and ask for a radio check.'],
   ['You have found a lost child (about 6 years old, blue tutu) at your location. Report it on DISPATCH.'],
   ['A participant is down but conscious and breathing at your location. Request help on MEDICAL.'],
-  ['You can hear a teammate who can\'t reach the repeater. Relay their message to DISPATCH.'],
   ['Art car on fire at your location, no injuries. Report it on DISPATCH and stand by.'],
-  ['Switch to TAC 1 and coordinate with the nearest radio to meet at Center Camp.'],
+  ['Switch to TAC 1 and coordinate a meeting point with another radio.'],
 ].map(([text, label]) => ({ text, label: label || text }));
 
-let audio, link, tx, map;
-let channels = [], landmarks = [];
-let state = { clients: [], channels: [], zones: [], handheldRange: 2200 };
+let audio, link, tx;
+let channels = [];
+let state = { clients: [], channels: [] };
 let monitor = new Set();
-let tool = 'move';
-let dragging = null; // { id, pos } while an instructor drags a radio
 const callers = new Map();
 
 loginForm({
@@ -59,11 +57,8 @@ async function start(who) {
     },
   });
   link.connect();
-
-  map = new MapView($('map'));
-  bindMap();
   bindControls();
-  requestAnimationFrame(frame);
+  setInterval(renderHearing, 100);
   setInterval(renderChannels, 1000); // keep the talk timers ticking
 }
 
@@ -71,7 +66,6 @@ function onMessage(m) {
   switch (m.t) {
     case 'hello':
       channels = m.channels;
-      landmarks = m.landmarks;
       tx.tot = m.tot;
       if (!monitor.size) monitor = new Set(channels.map((c) => c.id));
       link.send({ t: 'monitor', list: [...monitor] });
@@ -94,85 +88,18 @@ function onMessage(m) {
   }
 }
 
-function onAudio(ch, sid, q, payload) {
-  if (!tx.keyed) audio.frame(ch, sid, q, payload, channels[ch].mode);
+function onAudio(ch, sid, payload) {
+  if (!tx.keyed) audio.frame(ch, sid, payload, channels[ch].mode);
 }
 
-function frame(now) {
-  requestAnimationFrame(frame);
+function renderHearing() {
   const heard = audio.active().map((s) => `CH${s.ch + 1} ${channels[s.ch].name}: ${callers.get(s.ch + ':' + s.sid) || '?'}`);
   $('hearing').textContent = heard.length ? '🔊 ' + heard.join(' · ') : '';
-  if (dragging) {
-    const cl = state.clients.find((c) => c.id === dragging.id);
-    if (cl) cl.pos = dragging.pos;
-  }
-  if (channels.length) {
-    map.draw({ landmarks, channels, clients: state.clients, zones: state.zones, handheldRange: state.handheldRange, now });
-  }
-}
-
-// ---- map interaction ----
-
-function bindMap() {
-  const canvas = $('map');
-  let lastSent = 0;
-  const local = (e) => {
-    const r = canvas.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
-  };
-  const sendMove = () => link.send({ t: 'move', id: dragging.id, x: dragging.pos.x, y: dragging.pos.y });
-
-  canvas.addEventListener('pointerdown', (e) => {
-    const [x, y] = local(e);
-    if (tool === 'zone') {
-      const z = map.hitZone(state.zones, x, y);
-      if (z) {
-        link.send({ t: 'zone_del', id: z.id });
-      } else {
-        const w = map.toWorld(x, y);
-        link.send({ t: 'zone_add', x: w.x, y: w.y, r: Number($('zone-r').value), loss: Number($('zone-loss').value) });
-      }
-      return;
-    }
-    const cl = map.hitClient(state.clients, x, y);
-    if (cl) {
-      dragging = { id: cl.id, pos: cl.pos };
-      canvas.setPointerCapture(e.pointerId);
-    }
-  });
-  canvas.addEventListener('pointermove', (e) => {
-    const [x, y] = local(e);
-    if (!dragging) {
-      canvas.style.cursor = tool === 'zone' ? 'crosshair' : map.hitClient(state.clients, x, y) ? 'grab' : 'default';
-      return;
-    }
-    dragging.pos = map.toWorld(x, y);
-    // Live updates while dragging, so people hear the signal fade as it happens.
-    if (performance.now() - lastSent > 100) {
-      sendMove();
-      lastSent = performance.now();
-    }
-  });
-  const drop = () => {
-    if (dragging) sendMove();
-    dragging = null;
-  };
-  canvas.addEventListener('pointerup', drop);
-  canvas.addEventListener('pointercancel', drop);
 }
 
 // ---- panels ----
 
 function bindControls() {
-  const setTool = (t) => {
-    tool = t;
-    $('tool-move').classList.toggle('on', t === 'move');
-    $('tool-zone').classList.toggle('on', t === 'zone');
-  };
-  $('tool-move').onclick = () => setTool('move');
-  $('tool-zone').onclick = () => setTool('zone');
-  $('zone-r').oninput = (e) => ($('zone-r-v').textContent = e.target.value + ' m');
-  $('zone-loss').oninput = (e) => ($('zone-loss-v').textContent = Math.round(e.target.value * 100) + '%');
   $('volume').oninput = (e) => audio.setVolume(Number(e.target.value));
   $('logout').onclick = (e) => { e.preventDefault(); logout(); };
 
@@ -247,14 +174,12 @@ function renderRoster() {
   for (const cl of radios) {
     to.add(new Option(cl.callsign, cl.id));
     const ch = channels[cl.channel];
-    const lm = landmarks.find((l) => l.id === cl.loc);
-    const where = lm ? lm.name : `near ${nearestLandmark(landmarks, cl.pos).name}`;
     const chText = (cl.scanning ? 'SCAN · ' : '') + `CH ${cl.channel + 1} ${ch ? ch.name : ''}`;
     const actions = el('td', {});
     if (cl.tx) actions.append(el('span', { className: 'badge tx' }, 'TX'), cutButton(cl));
-    body.append(el('tr', {}, el('td', {}, cl.callsign), el('td', {}, chText), el('td', {}, where), actions));
+    body.append(el('tr', {}, el('td', {}, cl.callsign), el('td', {}, chText), actions));
   }
-  if (!radios.length) body.append(el('tr', {}, el('td', { colSpan: 4, className: 'hint' }, 'No radios connected yet.')));
+  if (!radios.length) body.append(el('tr', {}, el('td', { colSpan: 3, className: 'hint' }, 'No radios connected yet.')));
   to.value = [...to.options].some((o) => o.value === prevTo) ? prevTo : '0';
 }
 
@@ -269,7 +194,7 @@ function renderTx() {
     idle: 'Ready',
     waiting: 'Requesting repeater…',
     tx: tx.vog ? 'Voice of God: transmitting on every repeater' : 'Transmitting',
-    denied: tx.reason === 'no_repeater' ? 'No repeater' : tx.vog ? 'Another Voice of God is on the air' : 'Channel busy',
+    denied: tx.vog ? 'Another Voice of God is on the air' : 'Channel busy',
     alarm: 'Time-out: release the button',
     preempted: 'Cut off by Voice of God',
   };
