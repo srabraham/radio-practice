@@ -77,7 +77,7 @@ func login(a *Auth, password string) *httptest.ResponseRecorder {
 func TestLoginRefusedOnceFailureBudgetIsSpent(t *testing.T) {
 	// HandleLogin sleeps on every wrong password; the bubble's fake clock skips it.
 	synctest.Test(t, func(t *testing.T) {
-		a := NewAuth("right", "control", func(string, string) bool { return false })
+		a := NewAuth("right", func(string, string) bool { return false })
 		a.failures = newFailureBudget(2, time.Hour)
 
 		if w := login(a, "right"); w.Code != http.StatusOK {
@@ -102,7 +102,7 @@ func TestLoginRefusedOnceFailureBudgetIsSpent(t *testing.T) {
 }
 
 func TestLoginRefusedWhenCallsignOnTheAir(t *testing.T) {
-	a := NewAuth("right", "control", nil)
+	a := NewAuth("right", nil)
 	// Stands in for the hub: BOT1 is connected from the "phone" login.
 	a.inUse = func(callsign, sid string) bool { return callsign == "BOT1" && sid != "phone" }
 
@@ -113,7 +113,7 @@ func TestLoginRefusedWhenCallsignOnTheAir(t *testing.T) {
 
 	// The device already holding BOT1 may log in again and keeps its session.
 	r := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"callsign":"BOT1","password":"right"}`))
-	r.AddCookie(&http.Cookie{Name: cookieName, Value: a.issue(session{Callsign: "BOT1", Sid: "phone", Role: RoleParticipant, Exp: time.Now().Add(time.Hour).Unix()})})
+	r.AddCookie(&http.Cookie{Name: cookieName, Value: a.issue(session{Callsign: "BOT1", Sid: "phone", Exp: time.Now().Add(time.Hour).Unix()})})
 	w = httptest.NewRecorder()
 	a.HandleLogin(w, r)
 	if w.Code != http.StatusOK {

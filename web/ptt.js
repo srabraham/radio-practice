@@ -1,9 +1,9 @@
-// Transmit-side state machine shared by the radio and the instructor console.
+// Transmit-side state machine for the radio.
 //
 //   idle ──down──▶ waiting (digital: until the repeater grants) ──tx_ok──▶ tx
 //   idle ──down──▶ tx (analog: keys immediately)
-//   waiting ──tx_deny──▶ denied    tx ──tx_end──▶ alarm (TOT or forced)
-//   tx ──tx_end(vog)──▶ preempted (Control's Voice of God; receives meanwhile)
+//   waiting ──tx_deny──▶ denied    tx ──tx_end──▶ alarm (TOT)
+//   tx ──tx_end(vog)──▶ preempted (someone's Voice of God; receives meanwhile)
 //   any ──up──▶ idle
 //
 // Capture starts on press even for digital, so anything said before the
@@ -27,15 +27,14 @@ export class Transmitter {
   // the user hears the Voice of God call that cut them off.
   get keyed() { return this.state !== 'idle' && this.state !== 'preempted'; }
 
-  // vog keys every repeater channel at once (instructor only).
-  down(ch, mode, vog = false) {
+  down(ch, mode) {
     if (this.state !== 'idle') return;
     this.ch = ch;
-    this.vog = vog;
-    this.state = mode === 'digital-repeater' ? 'waiting' : 'tx';
+    // Voice of God goes out over the repeaters, so it waits for them too.
+    this.state = mode === 'fm-simplex' ? 'tx' : 'waiting';
     this.startedAt = performance.now();
     this.audio.startCapture();
-    this.link.send({ t: 'key', ch, vog });
+    this.link.send({ t: 'key', ch });
     if (this.tot > 6) {
       this.warn = setTimeout(() => this.state === 'tx' && this.audio.toneTotWarn(), (this.tot - 5) * 1000);
     }
@@ -96,8 +95,8 @@ export class Transmitter {
   // Wires a button (press-and-hold, or tap-to-latch) and the space bar.
   bind(button, { latched, channel }) {
     const press = () => {
-      const { id, mode, vog } = channel();
-      this.down(id, mode, vog);
+      const { id, mode } = channel();
+      this.down(id, mode);
     };
     button.addEventListener('pointerdown', (e) => {
       e.preventDefault();

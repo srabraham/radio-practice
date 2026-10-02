@@ -38,12 +38,11 @@ func main() {
 	tot := flag.Duration("tot", 60*time.Second, "transmit time-out timer")
 	flag.Parse()
 
-	participantPW := envOrRandom("RADIO_PASSWORD")
-	instructorPW := envOrRandom("RADIO_INSTRUCTOR_PASSWORD")
+	password := envOrRandom("RADIO_PASSWORD")
 
 	hub := NewHub(defaultChannels(), *tot)
 	go hub.RunStateBroadcast(200*time.Millisecond, nil)
-	auth := NewAuth(participantPW, instructorPW, hub.InUse)
+	auth := NewAuth(password, hub.InUse)
 
 	var static fs.FS
 	if *dev {
@@ -59,7 +58,7 @@ func main() {
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
-	// The console used to live here; it's now the same page as the radio.
+	// The old instructor console's URL.
 	mux.Handle("/instructor.html", http.RedirectHandler("/", http.StatusMovedPermanently))
 	mux.HandleFunc("/api/login", auth.HandleLogin)
 	mux.HandleFunc("/api/me", auth.HandleMe)
@@ -164,7 +163,7 @@ func serveWS(hub *Hub, auth *Auth, w http.ResponseWriter, r *http.Request) {
 			}
 		})
 	}
-	c, err := hub.Join(s.Callsign, s.Sid, s.Role, send, kick)
+	c, err := hub.Join(s.Callsign, s.Sid, send, kick)
 	if err != nil {
 		conn.Close(closeCallsignInUse, "callsign in use")
 		return

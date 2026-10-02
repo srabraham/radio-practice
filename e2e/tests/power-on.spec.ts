@@ -1,4 +1,4 @@
-import { test, expect, CH, Radio, INSTRUCTOR_PW } from '../lib/fixtures';
+import { test, expect, CH, Radio } from '../lib/fixtures';
 import { HZ, expectTone, now } from '../lib/audio';
 
 test.describe('power on', () => {
@@ -77,12 +77,6 @@ test.describe('power on', () => {
     await expect(r.page.getByLabel('Callsign')).toHaveValue('');
   });
 
-  test('an instructor link switches a participant session to the console', async ({ openRadio }) => {
-    const r = await openRadio();
-    await r.page.goto('/?p=' + INSTRUCTOR_PW);
-    await expect(r.page.locator('#console')).toBeVisible();
-    await expect(r.page.locator('#me')).toHaveText(r.callsign);
-  });
 
   test('a second tab takes the radio over; the first stops receiving', async ({ openRadio }) => {
     const first = await openRadio({ ch: CH.tac1 });
@@ -99,28 +93,7 @@ test.describe('power on', () => {
     expect(first.wire.audioReceivedSince(wireT0)).toHaveLength(0);
   });
 
-  test('an instructor login opens the console on the same page', async ({ page }) => {
-    await page.goto('/');
-    await page.getByLabel('Callsign').fill('CONTROL');
-    await page.getByLabel('Password').fill(INSTRUCTOR_PW);
-    await page.getByRole('button', { name: 'Power on' }).click();
-    await expect(page).toHaveURL(new RegExp(`/\\?p=${INSTRUCTOR_PW}$`));
-    await expect(page.locator('#console')).toBeVisible();
-    await expect(page.locator('#login')).toBeHidden();
-    await expect(page.locator('#me')).toHaveText('CONTROL');
-    await expect(page.locator('#net')).toHaveText('online');
-    // No navigation in between, so the login click still counts as the gesture.
-    await expect.poll(() => page.evaluate(() => (window as any).__tap.state())).toBe('running');
-    await expect(page.locator('#spk-warn')).toBeHidden();
-  });
 
-  test('an instructor session reopens the console without the login card', async ({ openConsole }) => {
-    const ctl = await openConsole();
-    await ctl.page.reload();
-    await expect(ctl.page.locator('#console')).toBeVisible();
-    await expect(ctl.page.locator('#login')).toBeHidden();
-    await expect(ctl.page.locator('#net')).toHaveText('online');
-  });
 
   test('the old console URL redirects to the radio page', async ({ page }) => {
     await page.goto('/instructor.html');

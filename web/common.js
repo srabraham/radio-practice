@@ -2,19 +2,17 @@ import { me } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Drives the login card. The password decides the role: participants get the
-// radio, instructors the console. The password lives in the URL (?p=) rather
-// than in storage, so the address bar is always a link to share; the callsign
-// is remembered per browser. With both in hand there's no card at all. Audio
-// may then start blocked, which the views' "Turn on sound" banner handles.
-export async function loginForm({ onInstructor, onParticipant }) {
+// Drives the login card. The password lives in the URL (?p=) rather than in
+// storage, so the address bar is always a link to share; the callsign is
+// remembered per browser. With both in hand there's no card at all. Audio may
+// then start blocked, which the radio's "Turn on sound" banner handles.
+export async function loginForm(onLogin) {
   const params = new URLSearchParams(location.search);
   const pw = params.get('p') ?? '';
   const enter = (who) => {
     saveCallsign(who.callsign);
     history.replaceState(null, '', location.pathname + '?' + new URLSearchParams({ p: who.password }));
-    if (who.role === 'instructor') onInstructor(who);
-    else onParticipant(who);
+    onLogin(who);
   };
   const login = async (callsign, password) => {
     $('login-error').textContent = '';
@@ -30,8 +28,7 @@ export async function loginForm({ onInstructor, onParticipant }) {
     enter(await r.json());
   };
 
-  // A link with a different password (say, the instructor's) wins over the
-  // session, so the same device can switch roles.
+  // A link with a different password wins over the session.
   const who = await me();
   if (who && (!pw || pw === who.password)) {
     enter(who);
@@ -53,11 +50,10 @@ export async function loginForm({ onInstructor, onParticipant }) {
   }
 }
 
-// Swaps the login card for the radio or console view.
-export function mount(view, bodyClass) {
+// Swaps the login card for the radio.
+export function mount(view) {
   $('login').hidden = true;
   $('login').after($(view).content.cloneNode(true));
-  document.body.className = bodyClass;
 }
 
 function loadCallsign() {

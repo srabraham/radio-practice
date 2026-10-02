@@ -14,7 +14,7 @@
   if (!Base) return;
 
   // Frequencies the app produces: received voice (the test mic's 700 Hz), busy
-  // bonk (440/330), a second test voice (600), prompt beep (880), TOT warn/alarm (1000), talk permit
+  // bonk (440/330), a second test voice (600), message beep (880), TOT warn/alarm (1000), talk permit
   // (1400/1900), and the FM hiss band (2200).
   const BANDS = [330, 440, 600, 700, 880, 1000, 1400, 1900, 2200];
   const contexts = [];

@@ -14,10 +14,7 @@ for (let i = 0; i < 256; i++) {
 }
 
 export class RadioAudio {
-  // clean: monitor mode for the instructor console. Every stream is mixed
-  // straight through with no doubling effect or noise.
-  constructor({ clean = false } = {}) {
-    this.clean = clean;
+  constructor() {
     this.streams = new Map();
     this.onFrame = null;
     this.onMicLevel = null; // ({ db, open }) about 20 times a second
@@ -188,7 +185,7 @@ export class RadioAudio {
     this.streams.delete(s.key);
     const at = Math.max(this.ctx.currentTime, s.nextTime);
     setTimeout(() => s.gain.disconnect(), (at - this.ctx.currentTime + 1) * 1000);
-    if (s.mode === 'fm-simplex' && !this.clean && s.lastAt > 0) {
+    if (s.mode === 'fm-simplex' && s.lastAt > 0) {
       const g = this.tail.gain;
       g.setValueAtTime(0.25, at);
       g.setValueAtTime(0, at + 0.16);
@@ -212,22 +209,18 @@ export class RadioAudio {
     }
     let hiss = 0, het = 0;
 
-    if (this.clean) {
-      for (const s of this.streams.values()) s.gain.gain.setTargetAtTime(1, t, 0.01);
-    } else {
-      const fm = active.filter((s) => s.mode === 'fm-simplex');
-      for (const s of active) if (s.mode !== 'fm-simplex') s.gain.gain.setTargetAtTime(1, t, 0.01);
-      if (fm.length) {
-        hiss = 0.02; // open squelch
-        if (fm.length > 1) {
-          // Two talkers at once: neither captures the receiver. Garbled mix.
-          fm.forEach((s) => s.gain.gain.setTargetAtTime(0.55, t, 0.01));
-          het = 0.08;
-          hiss += 0.15;
-          this.het.frequency.setTargetAtTime(600 + Math.random() * 1800, t, 0.05);
-        } else {
-          fm[0].gain.gain.setTargetAtTime(1, t, 0.01);
-        }
+    const fm = active.filter((s) => s.mode === 'fm-simplex');
+    for (const s of active) if (s.mode !== 'fm-simplex') s.gain.gain.setTargetAtTime(1, t, 0.01);
+    if (fm.length) {
+      hiss = 0.02; // open squelch
+      if (fm.length > 1) {
+        // Two talkers at once: neither captures the receiver. Garbled mix.
+        fm.forEach((s) => s.gain.gain.setTargetAtTime(0.55, t, 0.01));
+        het = 0.08;
+        hiss += 0.15;
+        this.het.frequency.setTargetAtTime(600 + Math.random() * 1800, t, 0.05);
+      } else {
+        fm[0].gain.gain.setTargetAtTime(1, t, 0.01);
       }
     }
     this.hiss.gain.setTargetAtTime(hiss, t, 0.03);

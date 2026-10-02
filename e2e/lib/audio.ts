@@ -6,7 +6,7 @@ export const HZ = {
   voice2: 600, // a second talker, to tell two voices apart
   busyHi: 440,
   busyLo: 330,
-  prompt: 880,
+  message: 880,
   tot: 1000, // TOT warning beep and the time-out / cut alarm
   permitLo: 1400,
   permitHi: 1900,

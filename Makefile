@@ -2,10 +2,9 @@ CH ?= 5
 CALLSIGN ?= BOT1
 ADDR ?= :5580
 
-# Easy-to-guess passwords for local practice only; serve leaves them unset
-# so the server generates random ones unless you set your own.
+# An easy-to-guess password for local practice only; serve leaves it unset
+# so the server generates a random one unless you set your own.
 run bot: export RADIO_PASSWORD ?= practice
-run bot: export RADIO_INSTRUCTOR_PASSWORD ?= control
 
 .DEFAULT_GOAL := help
 

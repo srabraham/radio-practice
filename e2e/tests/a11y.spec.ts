@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { test, expect, CH, Radio, Console, PARTICIPANT_PW } from '../lib/fixtures';
+import { test, expect, CH, Radio, PARTICIPANT_PW } from '../lib/fixtures';
 
 const WCAG = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
@@ -17,11 +17,6 @@ async function powerOn(page: Page, callsign: string) {
   return r;
 }
 
-async function openConsole(page: Page, callsign: string) {
-  const c = new Console(page, callsign);
-  await c.open();
-  return c;
-}
 
 for (const scheme of ['light', 'dark'] as const) {
   test.describe(`axe, ${scheme} mode`, () => {
@@ -47,7 +42,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expectNoAxeViolations(page);
     });
 
-    test('radio, transmitting, with a prompt and both warnings showing', async ({ page, openConsole: openCtl }) => {
+    test('radio, transmitting, with a message and both warnings showing', async ({ page, openRadio }) => {
       await page.goto('/');
       await page.evaluate(() => (window as any).__mic.set({ fail: 'NotAllowedError' }));
       const r = new Radio(page, `AX${scheme}2`);
@@ -56,10 +51,10 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Power on' }).click();
       await r.waitOnline();
       await expect(page.locator('#mic-warn')).toBeVisible();
-      const ctl = await openCtl();
-      await ctl.page.locator('#prompt-text').fill('Radio check, please.');
-      await ctl.page.getByRole('button', { name: 'Send prompt' }).click();
-      await expect(page.locator('#prompts .prompt')).toBeVisible();
+      const other = await openRadio();
+      await other.showControls();
+      await other.sendMessage('Radio check, please.');
+      await expect(page.locator('#popups .popup')).toBeVisible();
       await page.getByLabel('Tap to talk / tap to stop').check();
       await r.ptt.click();
       await expect(r.status).toHaveText(/^TX/);
@@ -68,14 +63,16 @@ for (const scheme of ['light', 'dark'] as const) {
       await expectNoAxeViolations(page);
     });
 
-    test('console with radios on the air', async ({ page, openRadio }) => {
-      await openConsole(page, `AXC${scheme}`);
+    test('radio with app controls, radios on the air and a message', async ({ page, openRadio }) => {
+      const r = await powerOn(page, `AXC${scheme}`);
+      await r.showControls();
       const a = await openRadio({ ch: CH.tac1 });
-      await openRadio({ ch: CH.control1 });
+      await openRadio({ ch: CH.voiceOfGod });
       await a.page.getByLabel('Tap to talk / tap to stop').check();
       await a.ptt.click();
-      await expect(page.locator('#roster')).toContainText(a.callsign);
-      await expect(page.locator('#ch-act-5')).toContainText(a.callsign);
+      await r.sendMessage('Radio check, please.');
+      await expect(page.locator('#roster tr', { hasText: a.callsign })).toContainText('TX');
+      await expect(page.locator('#msg-log')).toContainText('Radio check, please.');
       await expectNoAxeViolations(page);
     });
   });
@@ -109,7 +106,7 @@ test.describe('keyboard only', () => {
     // to highlight each item"; Option-Tab is how its keyboard users get there.
     const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
     await powerOn(page, 'KBTAB');
-    const want = ['Channel down', 'Channel up', 'SCAN', 'PUSH TO TALK', 'Volume', 'Microphone', 'Tap to talk / tap to stop', 'Log out'];
+    const want = ['Channel down', 'Channel up', 'SCAN', 'PUSH TO TALK', 'Volume', 'Microphone', 'Tap to talk / tap to stop', 'Show app controls', 'Log out'];
     const seen: string[] = [];
     await page.locator('body').focus();
     for (let i = 0; i < 25; i++) {
@@ -175,13 +172,13 @@ test.describe('screen readers', () => {
     await expect(page.getByRole('checkbox', { name: 'Tap to talk / tap to stop' })).toBeVisible();
   });
 
-  test('prompts from Control are announced', async ({ page, openConsole: openCtl }) => {
-    await powerOn(page, 'SRPROMPT');
-    await expect(page.locator('#prompts')).toHaveAttribute('aria-live', 'polite');
-    const ctl = await openCtl();
-    await ctl.page.locator('#prompt-text').fill('Switch to TAC 1.');
-    await ctl.page.getByRole('button', { name: 'Send prompt' }).click();
-    await expect(page.locator('#prompts')).toContainText('Switch to TAC 1.');
+  test('messages are announced', async ({ page, openRadio }) => {
+    await powerOn(page, 'SRMSG');
+    await expect(page.locator('#popups')).toHaveAttribute('aria-live', 'polite');
+    const other = await openRadio();
+    await other.showControls();
+    await other.sendMessage('Switch to TAC 1.');
+    await expect(page.locator('#popups')).toContainText('Switch to TAC 1.');
   });
 
   // The status line is the visual equivalent of the alert tones, and the only
@@ -208,15 +205,6 @@ test.describe('screen readers', () => {
     await page.keyboard.up('Space');
   });
 
-  test('being cut by Control is announced', async ({ openRadio, openConsole: openCtl }) => {
-    const r = await openRadio({ ch: CH.tac1 });
-    const ctl = await openCtl();
-    await r.page.getByLabel('Tap to talk / tap to stop').check();
-    await r.ptt.click();
-    await expect(r.status).toHaveText(/^TX/);
-    await ctl.page.locator('#roster tr', { hasText: r.callsign }).getByRole('button', { name: 'Cut' }).click();
-    await expect(r.page.getByRole('status').filter({ hasText: 'CUT BY CONTROL' })).toBeAttached();
-  });
 
   test('transmitting and scanning are exposed as pressed states', async ({ page }) => {
     const r = await powerOn(page, 'SRPRESS');
@@ -234,16 +222,6 @@ test.describe('screen readers', () => {
     await expect(scan).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('the console PTT exposes its pressed state', async ({ openConsole: openCtl }) => {
-    const ctl = await openCtl();
-    await ctl.page.getByLabel('Tap to talk / tap to stop').check();
-    await ctl.ptt.click();
-    await expect(ctl.txStatus).toHaveText('Transmitting');
-    await expect(ctl.ptt).toHaveAttribute('aria-pressed', 'true');
-    await expect(ctl.page.getByRole('status').filter({ hasText: 'Transmitting' })).toBeAttached();
-    await ctl.ptt.click();
-    await expect(ctl.ptt).toHaveAttribute('aria-pressed', 'false');
-  });
 
   test('mic and sound warnings are announced when they appear', async ({ openRadio }) => {
     const r = await openRadio({ mic: { fail: 'NotAllowedError' } });

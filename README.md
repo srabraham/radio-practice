@@ -1,20 +1,20 @@
 # Radio Practice
 
 A browser-based handheld radio simulator for practicing radio procedure before
-an event. It has multiple channels, a push-to-talk (PTT) button, and an
-instructor console. It is a single Go binary with no database.
+an event. It has multiple channels, a push-to-talk (PTT) button, a Voice of God
+channel that talks on every repeater at once, and a roster and text messages
+for everyone on the network. It is a single Go binary with no database.
 
 ## Run it locally
 
 ```sh
-RADIO_PASSWORD=practice RADIO_INSTRUCTOR_PASSWORD=control go run . -dev
+RADIO_PASSWORD=practice go run . -dev
 ```
 
-- Radios: http://localhost:8555. Log in with any callsign and the participant password.
-- Console: the same URL; logging in with the instructor password opens the console instead of a radio.
+- Open http://localhost:8555 and log in with any callsign and the password.
 - The password rides in the URL (`/?p=practice`), so the address bar is a link to share. The browser remembers the callsign, so a link plus a saved callsign logs straight in.
 - `-dev` serves `web/` from disk, so front-end edits only need a page refresh.
-- If you leave the password env vars unset, random passwords are generated and printed to the log.
+- If you leave `RADIO_PASSWORD` unset, a random password is generated and printed to the log.
 
 Test without a microphone, or with several people, using scripted radios:
 
@@ -31,8 +31,8 @@ such as `cloudflared tunnel --url http://localhost:8555` or `tailscale serve`.
 
 Playwright tests in `e2e/` drive real browsers through the audio workflows:
 talking and listening on both channel modes, doubling, the repeater's permit
-chirp and busy bonk, TOT, scan, the instructor console, mic and speaker
-handling, and accessibility (axe scans plus keyboard and screen-reader checks).
+chirp and busy bonk, TOT, scan, Voice of God, the app controls column, mic
+and speaker handling, and accessibility (axe scans plus keyboard and screen-reader checks).
 
 ```sh
 cd e2e
@@ -60,7 +60,6 @@ each browser's own fake capture device instead.
    TLS_EMAIL=you@example.org          # optional; Let's Encrypt expiry warnings
    TLS_STAGING=false                  # true while testing, to avoid rate limits
    RADIO_PASSWORD=…
-   RADIO_INSTRUCTOR_PASSWORD=…
    ```
 
 4. `docker compose up -d --build`
@@ -73,7 +72,7 @@ person reconnects by tapping "Power on".
 
 To run without Docker, build with `GOOS=linux GOARCH=arm64 go build -o radio .`,
 copy the binary over, and run
-`RADIO_PASSWORD=… RADIO_INSTRUCTOR_PASSWORD=… ./radio -tls-domain radio.example.org`
+`RADIO_PASSWORD=… ./radio -tls-domain radio.example.org`
 under systemd.
 
 ## Architecture
@@ -85,7 +84,7 @@ under systemd.
 │   → 8 kHz μ-law 20 ms frames│ ─ binary ────▶│  • channels: floor lock /    │
 │                             │               │    simplex txers, TOT timers │
 │ per-stream jitter buffer →  │◀─ binary ──── │  • radios: channel, scan     │
-│   doubling mix →            │               │  • state → instructor 5×/s   │
+│   doubling mix →            │               │  • roster → open columns 5×/s│
 │   radio EQ + hiss + tones   │◀─ JSON ────── │                              │
 └─────────────────────────────┘               └──────────────────────────────┘
 ```
@@ -95,7 +94,6 @@ be consistent between radios:
 - who holds a repeater
 - who is keyed on simplex
 - the time-out timer (TOT)
-- force-unkey
 
 There is no range model: every radio hears every transmission on the channels
 it is listening to. The server sends each frame only to those radios.
@@ -118,14 +116,18 @@ cutoff, then an alarm sounds until the user releases PTT.
 **Scan.** The radio stops on the first busy channel and stays there for a 3 s
 hang time. PTT during the hang time talks back on that channel.
 
-**Instructor console.**
-- Hears every monitored channel cleanly, with caller ID.
-- Force-unkeys a stuck mic.
-- Voice of God: transmits on every repeater channel at once. Anyone talking on
-  a repeater is cut off and hears Control instead. Simplex channels are not
-  affected.
-- Sends scenario prompts to everyone or one radio.
-- Transmits as Control.
+**Voice of God.** The server adds one more channel after the plan, labelled
+ALL REPEATERS. Anyone can key it to transmit on every repeater channel at once.
+Anyone talking on a repeater is cut off and hears Voice of God instead. A
+second Voice of God gets a busy bonk rather than cutting off the first.
+Simplex channels are not affected. A radio tuned to it listens to every
+repeater, stopping on the first busy one the way scan does.
+
+**App controls.** The "Show app controls" checkbox opens a second column with
+everyone on the network, their channel, and who is transmitting, plus text
+messages to everyone. A message also pops up with a beep on every other radio,
+whether its column is open or not. The server keeps the last 50 messages for
+radios that connect later.
 
 **Why 8 kHz μ-law and not Opus.** μ-law needs no codec library and works in
 every browser, including older iOS Safari. Radio audio is band-limited to
@@ -136,12 +138,12 @@ bandwidth by about 3x if that ever matters.
 ### Wire protocol
 
 JSON text frames carry control messages. Client to server:
-- `key` (instructors may send `vog: true` for Voice of God), `unkey`, `tune`, `scan`
-- instructor only: `monitor`, `force_unkey`, `prompt`
+- `key`, `unkey`, `tune`, `scan`
+- `watch` (the app controls column opened or closed), `msg`
 
 Server to client:
-- `hello`, `tx_ok`, `tx_deny`, `tx_end`, `rx_start`, `rx_end`, `prompt`
-- instructor only: `state`
+- `hello` (includes recent messages), `tx_ok`, `tx_deny`, `tx_end`, `rx_start`, `rx_end`, `msg`
+- `state`, the roster, only while `watch` is on
 
 Binary frames carry audio:
 - up: `[seq u16][160 B μ-law]`
@@ -151,14 +153,15 @@ Binary frames carry audio:
 
 | | |
 |---|---|
-| `hub.go` | Channel, floor and TOT logic, fan-out, instructor commands |
+| `hub.go` | Channel, floor and TOT logic, Voice of God, fan-out, roster and messages |
 | `channels.go` | Channel modes and the default channel plan |
 | `auth.go` | Shared-password login, signed session cookie |
 | `main.go` | HTTP, WebSocket, and autocert TLS |
 | `Dockerfile`, `docker-compose.yml` | Container build and public deploy |
 | `web/audio.js` | Capture, playout, and all radio sound effects |
-| `web/ptt.js` | Transmit state machine (shared by the radio and the console) |
-| `web/app.js`, `web/radio.js`, `web/console.js` | Entry point and the two UIs, both on `index.html` |
+| `web/ptt.js` | Transmit state machine |
+| `web/app.js`, `web/radio.js` | Entry point and the radio UI on `index.html` |
+| `web/controls.js` | The app controls column: roster and messages |
 | `cmd/radiobot` | Scripted radio for testing |
 | `e2e/` | Playwright browser tests |
 

@@ -18,10 +18,9 @@ import (
 const cookieName = "rp_session"
 
 type Auth struct {
-	key           []byte
-	participantPW string
-	instructorPW  string
-	failures      *failureBudget
+	key      []byte
+	password string
+	failures *failureBudget
 	// inUse reports whether a callsign is on the air from another login.
 	inUse func(callsign, sid string) bool
 }
@@ -29,21 +28,19 @@ type Auth struct {
 type session struct {
 	Callsign string `json:"c"`
 	Sid      string `json:"s"` // random per login, tells two people on one callsign apart
-	Role     Role   `json:"r"`
 	Exp      int64  `json:"e"`
 }
 
-func NewAuth(participantPW, instructorPW string, inUse func(callsign, sid string) bool) *Auth {
+func NewAuth(password string, inUse func(callsign, sid string) bool) *Auth {
 	// Per-process key: restarting the server logs everyone out, which is
 	// fine for a practice tool.
 	key := make([]byte, 32)
 	rand.Read(key)
 	return &Auth{
-		key:           key,
-		participantPW: participantPW,
-		instructorPW:  instructorPW,
-		failures:      newFailureBudget(1000, time.Hour),
-		inUse:         inUse,
+		key:      key,
+		password: password,
+		failures: newFailureBudget(1000, time.Hour),
+		inUse:    inUse,
 	}
 }
 
@@ -157,13 +154,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var role Role
-	switch {
-	case a.instructorPW != "" && subtle.ConstantTimeCompare([]byte(req.Password), []byte(a.instructorPW)) == 1:
-		role = RoleInstructor
-	case subtle.ConstantTimeCompare([]byte(req.Password), []byte(a.participantPW)) == 1:
-		role = RoleParticipant
-	default:
+	if subtle.ConstantTimeCompare([]byte(req.Password), []byte(a.password)) != 1 {
 		time.Sleep(500 * time.Millisecond) // blunt brute-force damper
 		http.Error(w, "wrong password", http.StatusUnauthorized)
 		return
@@ -182,7 +173,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ttl := 24 * time.Hour
-	s := session{Callsign: callsign, Sid: sid, Role: role, Exp: time.Now().Add(ttl).Unix()}
+	s := session{Callsign: callsign, Sid: sid, Exp: time.Now().Add(ttl).Unix()}
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    a.issue(s),
@@ -204,14 +195,10 @@ func (a *Auth) HandleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, a.whoami(s))
 }
 
-// whoami includes the role's password so the page can put it in a shareable
-// URL; the session already proves its holder knows it.
+// whoami includes the password so the page can put it in a shareable URL;
+// the session already proves its holder knows it.
 func (a *Auth) whoami(s session) map[string]any {
-	pw := a.participantPW
-	if s.Role == RoleInstructor {
-		pw = a.instructorPW
-	}
-	return map[string]any{"callsign": s.Callsign, "role": s.Role, "password": pw}
+	return map[string]any{"callsign": s.Callsign, "password": a.password}
 }
 
 func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {

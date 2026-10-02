@@ -26,12 +26,14 @@ test.describe('push to talk', () => {
     await expect(tx.page.locator('#scan-ind')).toBeHidden();
   });
 
-  test('typing a space in a text field does not key', async ({ openConsole }) => {
-    const ctl = await openConsole();
-    await ctl.page.locator('#prompt-text').pressSequentially('two words');
-    await expect(ctl.page.locator('#prompt-text')).toHaveValue('two words');
-    await expect(ctl.txStatus).toHaveText('Ready');
-    expect(ctl.wire.sentJson.filter((j) => j.msg.t === 'key')).toHaveLength(0);
+  test('typing a space in a text field does not key', async ({ openRadio }) => {
+    const r = await openRadio();
+    await r.showControls();
+    const field = r.page.getByLabel('Message to everyone');
+    await field.pressSequentially('two words');
+    await expect(field).toHaveValue('two words');
+    await expect(r.status).toHaveText('READY');
+    expect(r.wire.sentJson.filter((j) => j.msg.t === 'key')).toHaveLength(0);
   });
 
   test('tap to talk latches the transmitter on and off', async ({ openRadio, isMobile }) => {
@@ -85,7 +87,8 @@ test.describe('push to talk', () => {
     await r.page.getByRole('button', { name: 'Channel down' }).click();
     await r.page.getByRole('button', { name: 'Channel down' }).click();
     await r.page.getByRole('button', { name: 'Channel down' }).click();
-    await expect(r.chnum).toHaveText('CH 10');
+    await expect(r.chnum).toHaveText('CH 11');
+    await expect(r.chname).toHaveText('Voice of God');
 
     await r.hold();
     await expect(r.status).toHaveText(/^TX/);

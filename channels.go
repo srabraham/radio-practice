@@ -9,6 +9,10 @@ const (
 	// ModeRepeater is a digital (DMR-style) repeater channel: the repeater
 	// grants one talker at a time and rebroadcasts cleanly.
 	ModeRepeater Mode = "digital-repeater"
+	// ModeVoiceOfGod is the channel the hub adds after the plan when it has
+	// any repeaters. Keying it transmits on every repeater at once, cutting
+	// off whoever is talking there; tuning to it listens to all of them.
+	ModeVoiceOfGod Mode = "voice-of-god"
 )
 
 type ChannelConfig struct {

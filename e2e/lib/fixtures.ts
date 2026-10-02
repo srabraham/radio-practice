@@ -7,7 +7,6 @@ import { REPO, SERVER_BIN } from '../global-setup';
 export { expect };
 
 export const PARTICIPANT_PW = 'practice';
-export const INSTRUCTOR_PW = 'control';
 
 // Indexes into defaultChannels() in channels.go.
 export const CH = {
@@ -17,6 +16,7 @@ export const CH = {
   control1: 3, // the default channel
   tac1: 5, // FM simplex
   tac2: 6,
+  voiceOfGod: 10, // added by the server after the plan
 } as const;
 
 const HARNESS = readFileSync(new URL('../harness/page-audio.js', import.meta.url), 'utf8');
@@ -92,7 +92,7 @@ export class Wire {
   }
 }
 
-abstract class User {
+export class Radio {
   readonly wire: Wire;
   constructor(readonly page: Page, readonly callsign: string) {
     this.wire = new Wire(page);
@@ -138,9 +138,7 @@ abstract class User {
   audioState() {
     return this.page.evaluate(() => (window as any).__tap.state() as string);
   }
-}
 
-export class Radio extends User {
   get status() { return this.page.locator('#status'); }
   get chnum() { return this.page.locator('#chnum'); }
   get chname() { return this.page.locator('#chname'); }
@@ -164,27 +162,22 @@ export class Radio extends User {
   async waitReady() {
     await expect(this.status).toHaveText(/READY|SCANNING/);
   }
-}
 
-export class Console extends User {
-  get txStatus() { return this.page.locator('#tx-status'); }
-  get hearing() { return this.page.locator('#hearing'); }
+  get controls() { return this.page.locator('#app-controls'); }
 
-  async open(password = INSTRUCTOR_PW) {
-    await this.page.goto('/');
-    await this.page.getByLabel('Callsign').fill(this.callsign);
-    await this.page.getByLabel('Password').fill(password);
-    await this.page.getByRole('button', { name: 'Power on' }).click();
-    await expect(this.page.locator('#console')).toBeVisible();
-    await expect(this.page.locator('#net')).toHaveText('online');
-    await this.wire.waitFor('hello');
+  async showControls() {
+    await this.page.getByLabel('Show app controls').check();
+    await expect(this.controls).toBeVisible();
     await this.wire.waitFor('state');
   }
 
-  async transmitOn(value: string) {
-    await this.page.locator('#tx-ch').selectOption(value);
+  // Types into the column's message box, which must be showing.
+  async sendMessage(text: string) {
+    await this.page.getByLabel('Message to everyone').fill(text);
+    await this.page.getByRole('button', { name: 'Send' }).click();
   }
 }
+
 
 type Server = { url: string; log: () => string };
 
@@ -197,7 +190,6 @@ type WorkerFixtures = {
 type TestFixtures = {
   newUser: (opts?: UserOptions) => Promise<Page>;
   openRadio: (opts?: UserOptions) => Promise<Radio>;
-  openConsole: (opts?: UserOptions) => Promise<Console>;
 };
 
 let seq = 0;
@@ -250,7 +242,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       let out = '';
       const proc: ChildProcess = spawn(SERVER_BIN, ['-dev', '-addr', `127.0.0.1:${port}`, '-tot', tot], {
         cwd: REPO,
-        env: { ...process.env, RADIO_PASSWORD: PARTICIPANT_PW, RADIO_INSTRUCTOR_PASSWORD: INSTRUCTOR_PW },
+        env: { ...process.env, RADIO_PASSWORD: PARTICIPANT_PW },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       proc.stdout!.on('data', (d) => (out += d));
@@ -292,13 +284,6 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     });
   },
 
-  openConsole: async ({ newUser }, use) => {
-    await use(async (opts = {}) => {
-      const c = new Console(await newUser(opts), opts.callsign ?? uniqueCallsign('CTL'));
-      await c.open();
-      return c;
-    });
-  },
 });
 
 function freePort(): Promise<number> {
