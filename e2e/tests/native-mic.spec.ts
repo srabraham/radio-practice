@@ -11,8 +11,6 @@ test('the browser\'s own capture device goes out on the air', async ({ openRadio
   const rx = await openRadio({ ch: CH.tac1 });
   const tx = await openRadio({ ch: CH.tac1, mic: { fake: false } });
   await expect(tx.page.locator('#mic-warn')).toBeHidden();
-  // Let the gate open on the device's signal.
-  await tx.page.getByLabel('Mic sensitivity').fill('1');
 
   const t0 = Date.now();
   const rxT0 = await now(rx.page);

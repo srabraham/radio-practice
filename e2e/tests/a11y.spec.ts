@@ -109,7 +109,7 @@ test.describe('keyboard only', () => {
     // to highlight each item"; Option-Tab is how its keyboard users get there.
     const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
     await powerOn(page, 'KBTAB');
-    const want = ['Channel down', 'Channel up', 'SCAN', 'PUSH TO TALK', 'Volume', 'Microphone', 'Mic sensitivity', 'Tap to talk / tap to stop', 'Log out'];
+    const want = ['Channel down', 'Channel up', 'SCAN', 'PUSH TO TALK', 'Volume', 'Microphone', 'Tap to talk / tap to stop', 'Log out'];
     const seen: string[] = [];
     await page.locator('body').focus();
     for (let i = 0; i < 25; i++) {
@@ -171,7 +171,6 @@ test.describe('screen readers', () => {
     await expect(page.getByRole('button', { name: 'Channel up' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'PUSH TO TALK' })).toBeVisible();
     await expect(page.getByRole('slider', { name: 'Volume' })).toBeVisible();
-    await expect(page.getByRole('slider', { name: 'Mic sensitivity' })).toBeVisible();
     await expect(page.getByRole('combobox', { name: /^Microphone/ })).toBeVisible();
     await expect(page.getByRole('checkbox', { name: 'Tap to talk / tap to stop' })).toBeVisible();
   });
@@ -257,10 +256,10 @@ test.describe('screen readers', () => {
     const r = await powerOn(page, 'SRMETER');
     const meter = page.getByRole('meter', { name: 'Mic level' });
     await expect(meter).toBeVisible();
-    await expect(meter).toHaveAttribute('aria-valuetext', /dB, loud enough to be heard$/);
+    await expect.poll(async () => Number(await meter.getAttribute('aria-valuenow'))).toBeGreaterThan(-20);
     await r.mic({ level: 0.0005 });
-    await expect(meter).toHaveAttribute('aria-valuetext', /dB, below the gate$/);
-    expect(Number(await meter.getAttribute('aria-valuenow'))).toBeLessThan(-55);
+    await expect.poll(async () => Number(await meter.getAttribute('aria-valuenow'))).toBeLessThan(-55);
+    await expect(meter).toHaveAttribute('aria-valuetext', /^-\d+ dB$/);
   });
 });
 

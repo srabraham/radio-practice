@@ -1,38 +1,20 @@
 import { test, expect, CH, type Radio } from '../lib/fixtures';
-import { HZ, concat, decodeUlaw, expectNoTone, expectTone, loudest, now, rmsDb, toneShare } from '../lib/audio';
+import { HZ, concat, decodeUlaw, expectTone, loudest, now, toneShare } from '../lib/audio';
 
 test.describe('microphone', () => {
-  test('the noise gate keeps quiet sound off the air until sensitivity is raised', async ({ openRadio }) => {
+  test('quiet sound still goes out on the air', async ({ openRadio }) => {
     const rx = await openRadio({ ch: CH.tac1 });
-    // About -50 dBFS: like another radio's speaker across the room.
+    // About -50 dBFS: a soft-spoken user or a mic held far away.
     const tx = await openRadio({ ch: CH.tac1, mic: { level: 0.003 } });
-    const meter = tx.page.locator('#mic-meter');
-    const sens = tx.page.getByLabel('Mic sensitivity');
-
-    await sens.fill('0');
-    await expect(meter).not.toHaveClass(/\bopen\b/);
-    let t0 = Date.now();
-    let rxT0 = await now(rx.page);
+    const t0 = Date.now();
+    const rxT0 = await now(rx.page);
     await tx.talk(1000);
-    const gated = decodeUlaw(concat(tx.wire.audioSentSince(t0)));
-    expect(gated.length).toBeGreaterThan(0);
-    expect(rmsDb(gated)).toBeLessThan(-60);
-    await expectNoTone(rx.page, HZ.voice, rxT0);
-
-    await sens.fill('1');
-    await expect(meter).toHaveClass(/\bopen\b/);
-    t0 = Date.now();
-    rxT0 = await now(rx.page);
-    await tx.talk(1000);
-    const open = decodeUlaw(concat(tx.wire.audioSentSince(t0).slice(10)));
-    expect(toneShare(open, HZ.voice)).toBeGreaterThan(0.8);
+    const pcm = decodeUlaw(concat(tx.wire.audioSentSince(t0).slice(10)));
+    expect(toneShare(pcm, HZ.voice)).toBeGreaterThan(0.8);
     await expectTone(rx.page, HZ.voice, { since: rxT0 });
-
-    // Remembered for next time.
-    expect(await tx.page.evaluate(() => localStorage.getItem('rp.micSens'))).toBe('1');
   });
 
-  test('the level meter tracks the mic against the gate threshold', async ({ openRadio }) => {
+  test('the level meter tracks the mic', async ({ openRadio }) => {
     const r = await openRadio();
     const fill = r.page.locator('#mic-meter .meter-fill');
     const width = () => fill.evaluate((e) => parseFloat((e as HTMLElement).style.width));
@@ -40,12 +22,6 @@ test.describe('microphone', () => {
     // About -66 dBFS.
     await r.mic({ level: 0.0005 });
     await expect.poll(width).toBeLessThan(30);
-    await expect(r.page.locator('#mic-meter')).not.toHaveClass(/\bopen\b/);
-    // The threshold tick moves with the slider.
-    const mark = () => r.page.locator('#mic-meter').evaluate((e) => (e as HTMLElement).style.getPropertyValue('--mark'));
-    const before = await mark();
-    await r.page.getByLabel('Mic sensitivity').fill('0.1');
-    await expect.poll(mark).not.toBe(before);
   });
 
   test('the level meter falls when the mic goes digitally silent', async ({ openRadio }) => {
@@ -57,7 +33,6 @@ test.describe('microphone', () => {
     await expect.poll(width).toBeGreaterThan(80);
     await r.mic({ level: 0 });
     await expect.poll(width).toBeLessThan(10);
-    await expect(r.page.locator('#mic-meter')).not.toHaveClass(/\bopen\b/);
   });
 
   test('picking another microphone switches capture and is remembered', async ({ openRadio }) => {

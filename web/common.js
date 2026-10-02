@@ -97,27 +97,14 @@ export function bindDevices(audio) {
   let speaker = savedDevices().speaker || '';
   $('spk-row').hidden = !audio.canSetSpeaker();
 
-  // The meter shows the mic level against the gate threshold (the tick), and
-  // turns green while the gate is open, i.e. while you would be heard.
-  const sens = $('mic-sens');
   const meter = $('mic-meter'), level = meter.querySelector('.meter-fill');
   const pct = (db) => Math.max(0, Math.min(100, (db - METER_MIN_DB) / -METER_MIN_DB * 100)) + '%';
-  const setSens = () => meter.style.setProperty('--mark', pct(audio.setMicSensitivity(Number(sens.value))));
-  try {
-    sens.value = localStorage.getItem('rp.micSens') ?? sens.value;
-  } catch {}
-  setSens();
-  sens.oninput = () => {
-    setSens();
-    saveDevice('micSens', sens.value);
-  };
-  audio.onMicLevel = ({ db, open }) => {
+  audio.onMicLevel = ({ db }) => {
     level.style.width = pct(db);
-    meter.classList.toggle('open', open);
     const now = String(Math.round(Math.max(METER_MIN_DB, Math.min(0, db))));
     if (meter.getAttribute('aria-valuenow') !== now) {
       meter.setAttribute('aria-valuenow', now);
-      meter.setAttribute('aria-valuetext', `${now} dB, ${open ? 'loud enough to be heard' : 'below the gate'}`);
+      meter.setAttribute('aria-valuetext', `${now} dB`);
     }
   };
 

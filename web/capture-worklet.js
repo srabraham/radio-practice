@@ -1,4 +1,4 @@
-// Resamples the (already band-limited, gated) mic signal to 8 kHz, μ-law encodes it,
+// Resamples the (already band-limited) mic signal to 8 kHz, μ-law encodes it,
 // and posts 20 ms frames (160 bytes) to the main thread while active.
 
 const FRAME = 160;
@@ -51,54 +51,36 @@ class CaptureProcessor extends AudioWorkletProcessor {
 
 registerProcessor('capture', CaptureProcessor);
 
-// Noise gate on the mic, ahead of the compressor. Sound from across the room,
-// most importantly another radio's speaker, stays below the threshold and never
-// goes out. Without it two devices near each other feed back.
-class GateProcessor extends AudioWorkletProcessor {
-  static get parameterDescriptors() {
-    return [{ name: 'threshold', defaultValue: -45, minValue: -100, maxValue: 0, automationRate: 'k-rate' }];
-  }
-
+// Passes the mic through unchanged and reports its level for the settings meter.
+class LevelProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.env = 0;
-    this.gain = 0;
-    this.hold = 0;
     const coef = (secs) => 1 - Math.exp(-1 / (secs * sampleRate));
     this.envAttack = coef(0.002);
     this.envRelease = coef(0.1);
-    this.gainOpen = coef(0.002);
-    this.gainClose = coef(0.05);
-    // Keeps the gate open through the gaps between words.
-    this.holdLen = Math.round(0.3 * sampleRate);
     this.reportLen = Math.round(0.05 * sampleRate);
     this.sinceReport = 0;
   }
 
-  process(inputs, outputs, params) {
+  process(inputs, outputs) {
     // Firefox passes no channels at all once the source is silent (e.g. a
-    // muted mic). Treat that as silence so the meter and gate still fall.
+    // muted mic). Treat that as silence so the meter still falls.
     const input = inputs[0] || [], output = outputs[0];
     const mono = input[0];
     const n = mono ? mono.length : (output[0]?.length ?? 128);
-    const open = Math.pow(10, params.threshold[0] / 20);
     for (let i = 0; i < n; i++) {
       const a = mono ? Math.abs(mono[i]) : 0;
       this.env += (a - this.env) * (a > this.env ? this.envAttack : this.envRelease);
-      if (this.env > open) this.hold = this.holdLen;
-      else if (this.hold > 0) this.hold--;
-      const target = this.hold > 0 ? 1 : 0;
-      this.gain += (target - this.gain) * (target ? this.gainOpen : this.gainClose);
-      for (let c = 0; c < output.length; c++) output[c][i] = mono ? (input[c] || mono)[i] * this.gain : 0;
+      for (let c = 0; c < output.length; c++) output[c][i] = mono ? (input[c] || mono)[i] : 0;
     }
-    // Level for the settings meter, on the same scale as the threshold.
     this.sinceReport += n;
     if (this.sinceReport >= this.reportLen) {
       this.sinceReport = 0;
-      this.port.postMessage({ db: 20 * Math.log10(this.env + 1e-9), open: this.hold > 0 });
+      this.port.postMessage({ db: 20 * Math.log10(this.env + 1e-9) });
     }
     return true;
   }
 }
 
-registerProcessor('gate', GateProcessor);
+registerProcessor('level', LevelProcessor);

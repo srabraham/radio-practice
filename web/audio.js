@@ -91,10 +91,10 @@ export class RadioAudio {
     comp.ratio.value = 8;
     this.capture = new AudioWorkletNode(ctx, 'capture', { numberOfOutputs: 1 });
     this.capture.port.onmessage = (e) => this.onFrame && this.onFrame(e.data);
-    this.gate = new AudioWorkletNode(ctx, 'gate');
-    this.gate.port.onmessage = (e) => this.onMicLevel && this.onMicLevel(e.data);
+    const level = new AudioWorkletNode(ctx, 'level');
+    level.port.onmessage = (e) => this.onMicLevel && this.onMicLevel(e.data);
     this.micIn = biquad(ctx, 'highpass', 300);
-    this.micIn.connect(biquad(ctx, 'lowpass', 3000)).connect(this.gate).connect(comp).connect(this.capture);
+    this.micIn.connect(biquad(ctx, 'lowpass', 3000)).connect(level).connect(comp).connect(this.capture);
     // Keep the worklet pulled by the graph without making it audible.
     const sink = ctx.createGain();
     sink.gain.value = 0;
@@ -151,14 +151,6 @@ export class RadioAudio {
   resumeSpeaker() { return this.ctx.resume(); }
 
   setVolume(v) { this.master.gain.value = v; }
-
-  // s: 0 (only loud, close speech gets through) .. 1 (picks up nearly anything).
-  // Returns the gate threshold in dBFS.
-  setMicSensitivity(s) {
-    const db = -20 - s * 45;
-    this.gate?.parameters.get('threshold').setValueAtTime(db, this.ctx.currentTime);
-    return db;
-  }
 
   startCapture() { this.capture?.port.postMessage({ active: true }); }
   stopCapture() { this.capture?.port.postMessage({ active: false }); }
