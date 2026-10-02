@@ -84,6 +84,7 @@ test.describe('power on', () => {
     await second.page.goto('/');
     await second.waitOnline();
     await expect(first.page.locator('#net')).toContainText('opened in another tab');
+    await expect(first.status).toHaveText('NO SIGNAL');
 
     const tx = await openRadio({ ch: CH.tac1 });
     const t0 = await now(second.page);

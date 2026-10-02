@@ -30,7 +30,7 @@ export async function powerOn(who) {
   bindDevices(audio);
   navigator.wakeLock?.request('screen').catch(() => {});
 
-  link = new Link({ onMessage, onAudio, onStatus: (s) => ($('net').textContent = s) });
+  link = new Link({ onMessage, onAudio, onStatus: netStatus });
   tx = new Transmitter({ link, audio, tot: 60, onChange: render });
   tx.bind($('ptt'), {
     latched: () => $('latch').checked,
@@ -163,15 +163,44 @@ function render() {
     case 'alarm': status = 'TIME-OUT'; break;
     case 'preempted': if (!heard.length) status = 'PREEMPTED'; break;
   }
+  if (lost) status = 'NO SIGNAL';
   $('status').textContent = status;
   // The talk timer would make a screen reader read the status every second.
-  const spoken = tx.state === 'tx' ? 'Transmitting' : status;
+  const spoken = tx.state === 'tx' && !lost ? 'Transmitting' : status;
   if ($('status-live').textContent !== spoken) $('status-live').textContent = spoken;
   $('led-tx').classList.toggle('on', tx.state === 'tx' || tx.state === 'waiting');
   $('led-rx').classList.toggle('on', heard.length > 0);
   $('ptt').classList.toggle('active', tx.keyed);
   $('ptt').setAttribute('aria-pressed', tx.keyed);
   $('ch-up').disabled = $('ch-down').disabled = tx.keyed;
+}
+
+let lost = false;
+let connTimer;
+
+// The footer always says how the link is; the banner only speaks up when
+// it drops, and when it comes back.
+function netStatus(s) {
+  $('net').textContent = s;
+  clearTimeout(connTimer);
+  const banner = $('conn');
+  const show = (text, kind) => {
+    if (banner.textContent !== text) banner.textContent = text;
+    banner.className = 'conn ' + kind;
+  };
+  if (s === 'online') {
+    if (!lost) return;
+    lost = false;
+    show('Reconnected', 'ok');
+    connTimer = setTimeout(() => (banner.textContent = ''), 4000);
+  } else if (s === 'offline') {
+    lost = true;
+    show('Connection lost. Reconnecting…', 'bad');
+  } else {
+    lost = true;
+    show(s[0].toUpperCase() + s.slice(1), 'bad');
+  }
+  render();
 }
 
 function showMessage(m) {

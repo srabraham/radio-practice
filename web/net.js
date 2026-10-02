@@ -8,6 +8,15 @@ export class Link {
     this.onStatus = onStatus || (() => {});
     this.seq = 0;
     this.backoff = 500;
+    // Don't sit out the backoff once the device has a network again, and
+    // don't wait for a dead socket to time out once it has lost it.
+    window.addEventListener('online', () => {
+      if (!this.retry) return;
+      clearTimeout(this.retry);
+      this.retry = null;
+      this.connect();
+    });
+    window.addEventListener('offline', () => this.ws?.close());
   }
 
   connect() {
@@ -46,7 +55,7 @@ export class Link {
         location.reload();
         return;
       }
-      setTimeout(() => this.connect(), this.backoff);
+      this.retry = setTimeout(() => { this.retry = null; this.connect(); }, this.backoff);
       this.backoff = Math.min(this.backoff * 2, 8000);
     };
   }

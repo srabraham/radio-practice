@@ -152,6 +152,17 @@ label.check { flex-direction: row; align-items: center; gap: 8px; }
 .popup { background: #fff3bf; color: #3b2f00; border-radius: 10px; padding: 12px; }
 .popup p { margin: 6px 0 8px; overflow-wrap: anywhere; }
 .popup button { background: transparent; border-color: #c9a900; padding: 4px 10px; }
+.conn {
+  position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  z-index: 10; max-width: calc(100% - 32px); width: max-content;
+  padding: 8px 16px; border-radius: 999px; font-weight: 600; text-align: center;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  animation: conn-in 150ms ease-out;
+}
+.conn:empty { display: none; }
+.conn.bad { background: #c92a2a; color: #fff; }
+.conn.ok { background: #237032; color: #fff; }
+@keyframes conn-in { from { opacity: 0; transform: translate(-50%, -8px); } }
 .footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 16px; }
 .footer a { color: inherit; }
 
