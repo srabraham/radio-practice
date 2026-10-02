@@ -463,7 +463,7 @@ func TestMessageReachesEveryone(t *testing.T) {
 		t.Fatalf("BRAVO should get ALPHA's message, got %v", ctrlB)
 	}
 
-	// A radio that connects later gets the history in hello.
+	// A radio that connects later doesn't get earlier messages.
 	c := &testRadio{}
 	cl, err := h.Join("CHARLIE", "sid-CHARLIE", make(chan outMsg, 1024), func(KickReason) {})
 	if err != nil {
@@ -471,10 +471,8 @@ func TestMessageReachesEveryone(t *testing.T) {
 	}
 	c.Client = cl
 	ctrl, _ := drain(c)
-	hello := ctrl[0]
-	msgs, _ := hello["messages"].([]any)
-	if len(msgs) != 1 || msgs[0].(map[string]any)["text"] != "Radio check" {
-		t.Fatalf("hello should carry the message history, got %v", hello["messages"])
+	if hasMsg(ctrl, "msg", "", nil) || ctrl[0]["messages"] != nil {
+		t.Fatalf("a late radio should not get earlier messages, got %v", ctrl)
 	}
 }
 
@@ -486,29 +484,23 @@ func TestBlankMessageIsDropped(t *testing.T) {
 	if ctrl, _ := drain(b); hasMsg(ctrl, "msg", "", nil) {
 		t.Fatalf("a blank message should not be sent, got %v", ctrl)
 	}
-	if len(h.messages) != 0 {
-		t.Fatalf("a blank message should not be kept, got %v", h.messages)
-	}
 }
 
 func TestLongMessageIsCut(t *testing.T) {
 	h := newTestHub(time.Minute)
 	a := join(h, "ALPHA")
 	long := strings.Repeat("é", maxMessageLen+10)
+	drain(a)
 	send(h, a, `{"t":"msg","text":%q}`, long)
-	if got := []rune(h.messages[0].Text); len(got) != maxMessageLen {
+	ctrl, _ := drain(a)
+	var text string
+	for _, m := range ctrl {
+		if m["t"] == "msg" {
+			text, _ = m["text"].(string)
+		}
+	}
+	if got := []rune(text); len(got) != maxMessageLen {
 		t.Fatalf("got a %d-rune message, want %d", len(got), maxMessageLen)
-	}
-}
-
-func TestMessageHistoryIsBounded(t *testing.T) {
-	h := newTestHub(time.Minute)
-	a := join(h, "ALPHA")
-	for i := range keepMessages + 5 {
-		send(h, a, `{"t":"msg","text":"m%d"}`, i)
-	}
-	if len(h.messages) != keepMessages || h.messages[0].Text != "m5" {
-		t.Fatalf("should keep the last %d messages, got %d starting at %q", keepMessages, len(h.messages), h.messages[0].Text)
 	}
 }
 

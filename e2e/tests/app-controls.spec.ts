@@ -60,7 +60,7 @@ test.describe('app controls', () => {
     await expect(rx.page.locator('#msg-log')).toContainText('Radio check, please.');
   });
 
-  test('a radio that connects later sees earlier messages, without pop-ups', async ({ openRadio }) => {
+  test('a radio that connects later does not see earlier messages', async ({ openRadio }) => {
     const sender = await openRadio();
     await sender.showControls();
     await sender.sendMessage('Net opens at 0900.');
@@ -68,7 +68,8 @@ test.describe('app controls', () => {
 
     const late = await openRadio();
     await late.showControls();
-    await expect(late.page.locator('#msg-log')).toContainText('Net opens at 0900.');
-    await expect(late.page.locator('#popups .popup')).toHaveCount(0);
+    await sender.sendMessage('Net is open.');
+    await expect(late.page.locator('#msg-log')).toContainText('Net is open.');
+    await expect(late.page.locator('#msg-log')).not.toContainText('Net opens at 0900.');
   });
 });

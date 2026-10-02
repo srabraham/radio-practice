@@ -14,7 +14,6 @@ import (
 
 const (
 	maxMessageLen = 500 // runes
-	keepMessages  = 50  // history sent to each radio as it connects
 )
 
 type outMsg struct {
@@ -78,13 +77,6 @@ type Hub struct {
 	tot       time.Duration
 	rptrDelay time.Duration
 	dirty     bool
-	messages  []chatMessage
-}
-
-type chatMessage struct {
-	From string `json:"from"`
-	Text string `json:"text"`
-	At   int64  `json:"at"` // Unix milliseconds
 }
 
 func NewHub(chans []ChannelConfig, tot time.Duration) *Hub {
@@ -141,7 +133,6 @@ func (h *Hub) Join(callsign, sid string, send chan outMsg, kick func(KickReason)
 		"you":      map[string]any{"id": c.ID, "callsign": c.Callsign},
 		"channels": h.channelInfo(),
 		"tot":      h.tot.Seconds(),
-		"messages": append([]chatMessage{}, h.messages...),
 	})
 	h.sendOngoingLocked(c)
 	h.dirty = true
@@ -231,8 +222,8 @@ func (h *Hub) HandleJSON(c *Client, data []byte) {
 	}
 }
 
-// messageLocked sends a text message to everyone, the sender included, and
-// keeps it for radios that connect later.
+// messageLocked sends a text message to everyone, the sender included. It
+// isn't kept: a radio only sees messages sent while it's connected.
 func (h *Hub) messageLocked(c *Client, text string) {
 	text = strings.TrimSpace(strings.ToValidUTF8(text, ""))
 	if text == "" {
@@ -241,12 +232,7 @@ func (h *Hub) messageLocked(c *Client, text string) {
 	if utf8.RuneCountInString(text) > maxMessageLen {
 		text = string([]rune(text)[:maxMessageLen])
 	}
-	msg := chatMessage{From: c.Callsign, Text: text, At: time.Now().UnixMilli()}
-	h.messages = append(h.messages, msg)
-	if n := len(h.messages); n > keepMessages {
-		h.messages = slices.Clone(h.messages[n-keepMessages:])
-	}
-	out := map[string]any{"t": "msg", "from": msg.From, "text": msg.Text, "at": msg.At}
+	out := map[string]any{"t": "msg", "from": c.Callsign, "text": text, "at": time.Now().UnixMilli()}
 	for _, r := range h.clients {
 		h.sendJSON(r, out)
 	}

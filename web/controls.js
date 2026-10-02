@@ -45,8 +45,6 @@ export function controlsMessage(m) {
       channels = m.channels;
       // The server starts every connection fresh.
       link.send({ t: 'watch', on: $('show-controls').checked });
-      $('msg-log').replaceChildren();
-      for (const msg of m.messages || []) logMessage(msg);
       break;
     case 'state':
       clients = m.clients;

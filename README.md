@@ -120,8 +120,8 @@ repeater, stopping on the first busy one the way scan does.
 **App controls.** The "Show app controls" checkbox opens a second column with
 everyone on the network, their channel, and who is transmitting, plus text
 messages to everyone. A message also pops up with a beep on every other radio,
-whether its column is open or not. The server keeps the last 50 messages for
-radios that connect later.
+whether its column is open or not. Messages aren't stored: a radio only sees
+the ones sent since it loaded the page.
 
 **Why 8 kHz μ-law and not Opus.** μ-law needs no codec library and works in
 every browser, including older iOS Safari. Radio audio is band-limited to
@@ -136,7 +136,7 @@ JSON text frames carry control messages. Client to server:
 - `watch` (the app controls column opened or closed), `msg`
 
 Server to client:
-- `hello` (includes recent messages), `tx_ok`, `tx_deny`, `tx_end`, `rx_start`, `rx_end`, `msg`
+- `hello`, `tx_ok`, `tx_deny`, `tx_end`, `rx_start`, `rx_end`, `msg`
 - `state`, the roster, only while `watch` is on
 
 Binary frames carry audio:
