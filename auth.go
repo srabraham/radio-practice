@@ -180,7 +180,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 	})
 	writeJSON(w, a.whoami(s))

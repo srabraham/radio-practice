@@ -11,7 +11,7 @@ for everyone on the network. It is a single Go binary with no database.
 RADIO_PASSWORD=practice go run . -dev
 ```
 
-- Open http://localhost:8555 and log in with any callsign and the password.
+- Open http://localhost:8080 and log in with any callsign and the password.
 - The password rides in the URL (`/?p=practice`), so the address bar is a link to share. The browser remembers the callsign, so a link plus a saved callsign logs straight in.
 - `-dev` serves `web/` from disk, so front-end edits only need a page refresh.
 - If you leave `RADIO_PASSWORD` unset, a random password is generated and printed to the log.
@@ -24,8 +24,8 @@ go run ./cmd/radiobot -password practice -callsign BOT2 -ch 5 -pitch 400   # dou
 ```
 
 Phones need HTTPS before the browser allows the mic (localhost is the only
-exception). To test on a phone, either deploy with `-tls-domain` or use a tunnel
-such as `cloudflared tunnel --url http://localhost:8555` or `tailscale serve`.
+exception). To test on a phone, put it behind an HTTPS reverse proxy or use a
+tunnel such as `cloudflared tunnel --url http://localhost:8080` or `tailscale serve`.
 
 ## End-to-end tests
 
@@ -49,31 +49,25 @@ browser gets the same mic, and check what was played by tapping the page's
 `AudioContext` output (`e2e/harness/page-audio.js`). `native-mic.spec.ts` uses
 each browser's own fake capture device instead.
 
-## Deploy (AWS Lightsail or EC2)
+## Deploy
 
-1. Create a small instance: Lightsail $5/mo, or EC2 t4g.small. Open ports 80 and 443.
-2. Point a DNS name at it.
-3. Create a `.env` file next to `docker-compose.yml`. Git ignores it.
+The server only speaks plain HTTP (port 8080 by default, `-addr` to change it).
+Put a reverse proxy in front of it to terminate TLS. The proxy must:
+- forward WebSocket upgrades on `/ws`
+- pass the original `Host` header through, since WebSocket upgrades are refused
+  when `Origin` doesn't match `Host`
 
-   ```sh
-   TLS_DOMAIN=radio.example.org       # required; comma-separate several domains
-   TLS_EMAIL=you@example.org          # optional; Let's Encrypt expiry warnings
-   TLS_STAGING=false                  # true while testing, to avoid rate limits
-   RADIO_PASSWORD=…
-   ```
+With Docker:
 
-4. `docker compose up -d --build`
+1. Create a `.env` file next to `docker-compose.yml` with `RADIO_PASSWORD=…`.
+   Git ignores it. Set `HOST_PORT` there too to publish somewhere other than 8080.
+2. `docker compose up -d --build`
 
-`-tls-domain` gets and renews a Let's Encrypt certificate automatically, so you
-don't need a reverse proxy. Port 80 must stay reachable for issuance and
-renewal. Certificates are cached in `./certs` so they survive re-deploys. The
-server keeps everything in memory. A restart ends every session, and each
+The server keeps everything in memory. A restart ends every session, and each
 person reconnects by tapping "Power on".
 
 To run without Docker, build with `GOOS=linux GOARCH=arm64 go build -o radio .`,
-copy the binary over, and run
-`RADIO_PASSWORD=… ./radio -tls-domain radio.example.org`
-under systemd.
+copy the binary over, and run `RADIO_PASSWORD=… ./radio` under systemd.
 
 ## Architecture
 
@@ -156,8 +150,8 @@ Binary frames carry audio:
 | `hub.go` | Channel, floor and TOT logic, Voice of God, fan-out, roster and messages |
 | `channels.go` | Channel modes and the default channel plan |
 | `auth.go` | Shared-password login, signed session cookie |
-| `main.go` | HTTP, WebSocket, and autocert TLS |
-| `Dockerfile`, `docker-compose.yml` | Container build and public deploy |
+| `main.go` | HTTP and WebSocket |
+| `Dockerfile`, `docker-compose.yml` | Container build and deploy |
 | `web/audio.js` | Capture, playout, and all radio sound effects |
 | `web/ptt.js` | Transmit state machine |
 | `web/app.js`, `web/radio.js` | Entry point and the radio UI on `index.html` |
