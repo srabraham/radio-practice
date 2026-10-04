@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -138,23 +139,31 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Callsign string `json:"callsign"`
 		Password string `json:"password"`
 	}
+	outcome := "ok"
+	defer func() {
+		log.Printf("login attempt from %s as %q: %s", clientAddr(r), req.Callsign, outcome)
+	}()
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		outcome = "bad request"
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	callsign := strings.ToUpper(strings.TrimSpace(req.Callsign))
 	if !callsignRE.MatchString(callsign) {
+		outcome = "invalid callsign"
 		http.Error(w, "callsign must be 1-20 letters, digits, spaces, - or _", http.StatusBadRequest)
 		return
 	}
 
 	if wait := a.failures.take(); wait > 0 {
+		outcome = "refused, failure budget spent"
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		http.Error(w, "too many failed logins; try again later", http.StatusTooManyRequests)
 		return
 	}
 
 	if subtle.ConstantTimeCompare([]byte(req.Password), []byte(a.password)) != 1 {
+		outcome = "wrong password"
 		time.Sleep(500 * time.Millisecond) // blunt brute-force damper
 		http.Error(w, "wrong password", http.StatusUnauthorized)
 		return
@@ -168,6 +177,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		sid = prev.Sid
 	}
 	if a.inUse(callsign, sid) {
+		outcome = "callsign already on the air"
 		http.Error(w, callsign+" is already on the air; pick another callsign", http.StatusConflict)
 		return
 	}
@@ -202,8 +212,21 @@ func (a *Auth) whoami(s session) map[string]any {
 }
 
 func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	if s, ok := a.Session(r); ok {
+		log.Printf("logout from %s as %s", clientAddr(r), s.Callsign)
+	}
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// clientAddr includes X-Forwarded-For when present, since the app normally
+// sits behind a reverse proxy. The header is client-controlled, so it's only
+// good for logs.
+func clientAddr(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return r.RemoteAddr + " (forwarded for " + xff + ")"
+	}
+	return r.RemoteAddr
 }
 
 func randomID() string {

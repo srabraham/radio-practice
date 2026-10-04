@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -104,11 +105,14 @@ func serveWS(hub *Hub, auth *Auth, w http.ResponseWriter, r *http.Request) {
 	// The 4xxx close codes tell the page to stop reconnecting; see net.js.
 	// A slow client can trip the kick on every message, so close only once.
 	var kickOnce sync.Once
+	var kicked atomic.Pointer[string]
 	kick := func(why KickReason) {
 		kickOnce.Do(func() {
 			if why == KickReplaced {
+				kicked.Store(ptr("replaced by a new connection"))
 				go conn.Close(closeReplaced, "opened elsewhere")
 			} else {
+				kicked.Store(ptr("kicked for being too slow"))
 				go conn.Close(websocket.StatusTryAgainLater, "too slow")
 			}
 		})
@@ -120,10 +124,19 @@ func serveWS(hub *Hub, auth *Auth, w http.ResponseWriter, r *http.Request) {
 	}
 	defer hub.Leave(c)
 
+	start := time.Now()
 	go writeLoop(ctx, conn, send, cancel)
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
+			reason := err.Error()
+			if k := kicked.Load(); k != nil {
+				reason = *k
+			} else if code := websocket.CloseStatus(err); code != -1 {
+				reason = "closed by client (" + code.String() + ")"
+			}
+			log.Printf("session ended for %s from %s after %s: %s",
+				s.Callsign, clientAddr(r), time.Since(start).Round(time.Second), reason)
 			return
 		}
 		if typ == websocket.MessageBinary {
@@ -133,6 +146,8 @@ func serveWS(hub *Hub, auth *Auth, w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func writeLoop(ctx context.Context, conn *websocket.Conn, send <-chan outMsg, cancel func()) {
 	defer cancel()
