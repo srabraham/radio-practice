@@ -87,7 +87,7 @@ test.describe('push to talk', () => {
     await r.page.getByRole('button', { name: 'Channel down' }).click();
     await r.page.getByRole('button', { name: 'Channel down' }).click();
     await r.page.getByRole('button', { name: 'Channel down' }).click();
-    await expect(r.chnum).toHaveText('CH 11');
+    await expect(r.chnum).toHaveText('CH 12');
     await expect(r.chname).toHaveText('Voice of God');
 
     await r.hold();

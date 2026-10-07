@@ -16,7 +16,8 @@ export const CH = {
   control1: 3, // the default channel
   tac1: 5, // FM simplex
   tac2: 6,
-  voiceOfGod: 10, // added by the server after the plan
+  echo: 10, // FM simplex, with Echobot
+  voiceOfGod: 11, // added by the server after the plan
 } as const;
 
 const HARNESS = readFileSync(new URL('../harness/page-audio.js', import.meta.url), 'utf8');

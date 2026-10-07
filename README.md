@@ -117,6 +117,15 @@ second Voice of God gets a busy bonk rather than cutting off the first.
 Simplex channels are not affected. A radio tuned to it listens to every
 repeater, stopping on the first busy one the way scan does.
 
+**Echo.** The `echo` channel is simplex with a radio called Echobot parked on
+it. Once everyone on the channel has unkeyed, Echobot waits 1 s, then replays
+the transmission to everyone on the channel. It replays the frames with their
+original timing, and each talker in a double gets a separate stream, so every
+receiver adds the same hiss, squelch tail and garbling it added live. Anyone
+who keys up during a replay doubles with Echobot. Their transmission is
+echoed after the replay finishes, without Echobot's audio in it. Nobody can
+log in as Echobot.
+
 **App controls.** The "Show app controls" checkbox opens a second column with
 everyone on the network, their channel, and who is transmitting, plus text
 messages to everyone. A message also pops up with a beep on every other radio,
@@ -148,6 +157,7 @@ Binary frames carry audio:
 | | |
 |---|---|
 | `hub.go` | Channel, floor and TOT logic, Voice of God, fan-out, roster and messages |
+| `echo.go` | Echobot: records and replays the echo channel |
 | `channels.go` | Channel modes and the default channel plan |
 | `auth.go` | Shared-password login, signed session cookie |
 | `main.go` | HTTP and WebSocket |

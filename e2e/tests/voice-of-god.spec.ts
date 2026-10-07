@@ -4,7 +4,7 @@ import { HZ, expectNoTone, expectTone, now } from '../lib/audio';
 test.describe('Voice of God', () => {
   test('is the last channel on the knob, labelled ALL REPEATERS', async ({ openRadio }) => {
     const r = await openRadio({ ch: CH.voiceOfGod });
-    await expect(r.chnum).toHaveText('CH 11');
+    await expect(r.chnum).toHaveText('CH 12');
     await expect(r.chname).toHaveText('Voice of God');
     await expect(r.page.locator('#chsub')).toHaveText('ALL REPEATERS');
     await r.page.getByRole('button', { name: 'Channel up' }).click();

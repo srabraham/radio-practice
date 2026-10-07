@@ -20,6 +20,10 @@ type ChannelConfig struct {
 	Mode Mode   `json:"mode"`
 	// Default marks the channel a radio starts on when it has no saved channel.
 	Default bool `json:"default,omitempty"`
+	// Echo makes Echobot listen on this simplex channel and replay each
+	// transmission, as a listener heard it, once the channel goes quiet.
+	// The hub uses the first such channel.
+	Echo bool `json:"echo,omitempty"`
 }
 
 func defaultChannels() []ChannelConfig {
@@ -34,5 +38,6 @@ func defaultChannels() []ChannelConfig {
 		{Name: "tac 3", Mode: ModeSimplex},
 		{Name: "Ranger Talk", Mode: ModeRepeater},
 		{Name: "Ranger HQ", Mode: ModeRepeater},
+		{Name: "echo", Mode: ModeSimplex, Echo: true},
 	}
 }

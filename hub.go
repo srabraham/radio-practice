@@ -38,6 +38,7 @@ type Client struct {
 	ID       uint16
 	Callsign string
 	sid      string // login session; see Join
+	bot      bool   // Echobot: no connection, so nothing is sent to it
 
 	send chan outMsg
 	kick func(KickReason)
@@ -59,6 +60,7 @@ type transmission struct {
 	// Repeater key-up latency: audio before this never goes out, so the
 	// first moments after the talk-permit tone are clipped.
 	audioAt time.Time
+	echo    *echoVoice // the recording Echobot will replay, on the echo channel
 }
 
 type channel struct {
@@ -77,12 +79,15 @@ type Hub struct {
 	tot       time.Duration
 	rptrDelay time.Duration
 	dirty     bool
+	echo      *echoBot        // nil when the plan has no echo channel
+	voiceIDs  map[uint16]bool // stream IDs Echobot is replaying on; see allocIDLocked
 }
 
 func NewHub(chans []ChannelConfig, tot time.Duration) *Hub {
 	h := &Hub{
 		clients:   map[uint16]*Client{},
 		byCall:    map[string]*Client{},
+		voiceIDs:  map[uint16]bool{},
 		tot:       tot,
 		rptrDelay: 1000 * time.Millisecond,
 	}
@@ -91,6 +96,9 @@ func NewHub(chans []ChannelConfig, tot time.Duration) *Hub {
 	}
 	for i, cfg := range chans {
 		h.channels = append(h.channels, &channel{ChannelConfig: cfg, id: i, txers: map[*Client]bool{}})
+	}
+	if i := slices.IndexFunc(chans, func(c ChannelConfig) bool { return c.Echo && c.Mode == ModeSimplex }); i >= 0 {
+		h.addEchobot(i)
 	}
 	return h
 }
@@ -113,12 +121,8 @@ func (h *Hub) Join(callsign, sid string, send chan outMsg, kick func(KickReason)
 		old.kick(KickReplaced)
 	}
 
-	h.nextID++
-	for h.nextID == 0 || h.clients[h.nextID] != nil {
-		h.nextID++
-	}
 	c := &Client{
-		ID:       h.nextID,
+		ID:       h.allocIDLocked(),
 		Callsign: callsign,
 		sid:      sid,
 		send:     send,
@@ -137,6 +141,16 @@ func (h *Hub) Join(callsign, sid string, send chan outMsg, kick func(KickReason)
 	h.sendOngoingLocked(c)
 	h.dirty = true
 	return c, nil
+}
+
+// allocIDLocked picks an ID no radio or replayed stream is using. IDs are
+// the sid on downlink audio, so they must be unique among concurrent streams.
+func (h *Hub) allocIDLocked() uint16 {
+	h.nextID++
+	for h.nextID == 0 || h.clients[h.nextID] != nil || h.voiceIDs[h.nextID] {
+		h.nextID++
+	}
+	return h.nextID
 }
 
 // InUse reports whether callsign is connected from a login other than sid.
@@ -300,6 +314,7 @@ func (h *Hub) startTxLocked(c *Client, keyed int, chs []int, vog bool) {
 		}
 	})
 	c.tx = tx
+	h.echoKeyedLocked(c)
 	h.sendJSON(c, map[string]any{"t": "tx_ok", "ch": keyed})
 	for _, r := range h.clients {
 		if r == c {
@@ -327,6 +342,9 @@ func (h *Hub) endTxLocked(c *Client, reason string) {
 			ch.holder = nil
 		}
 		delete(ch.txers, c)
+	}
+	if tx.echo != nil {
+		h.echoUnkeyedLocked(tx.echo)
 	}
 	if reason != "" {
 		h.sendJSON(c, map[string]any{"t": "tx_end", "reason": reason})
@@ -356,18 +374,27 @@ func (h *Hub) Audio(c *Client, frame []byte) {
 	if tx == nil || !h.connectedLocked(c) || time.Now().Before(tx.audioAt) {
 		return
 	}
+	if tx.echo != nil {
+		h.echoRecordLocked(tx.echo, frame)
+	}
+	h.fanOutLocked(tx.chs, c.ID, frame)
+}
+
+// fanOutLocked sends a frame to every radio that hears chs, as stream sid.
+func (h *Hub) fanOutLocked(chs []int, sid uint16, frame []byte) {
 	for _, r := range h.clients {
-		// Radios are half-duplex: while transmitting you hear nothing.
-		if r == c || r.tx != nil {
+		// Radios are half-duplex: while transmitting you hear nothing. That
+		// includes whoever sent the frame.
+		if r.bot || r.tx != nil {
 			continue
 		}
-		id, ok := h.rxChannelLocked(r, tx.chs)
+		id, ok := h.rxChannelLocked(r, chs)
 		if !ok {
 			continue
 		}
 		out := make([]byte, 3+len(frame))
 		out[0] = byte(id)
-		binary.BigEndian.PutUint16(out[1:3], c.ID)
+		binary.BigEndian.PutUint16(out[1:3], sid)
 		copy(out[3:], frame)
 		select {
 		case r.send <- outMsg{binary: true, data: out}:
@@ -422,6 +449,9 @@ func (h *Hub) sendOngoingLocked(c *Client) {
 }
 
 func (h *Hub) sendJSON(c *Client, v any) {
+	if c.bot {
+		return
+	}
 	data, err := json.Marshal(v)
 	if err != nil {
 		log.Printf("marshal: %v", err)
